@@ -175,7 +175,7 @@ function renderHouseholdSetup(user) {
       <p class="welcome-copy">Give your private family space a name. You can add children and other parents next.</p>
       <form id="household-form" class="auth-form">
         <label for="household-name">Household name</label>
-        <input id="household-name" name="householdName" maxlength="60" placeholder="e.g. Garrett Family" required>
+        <input id="household-name" name="householdName" maxlength="60" placeholder="e.g. Jones Family" required>
         <button class="primary-button" id="create-household" type="submit">Create household</button>
       </form>
       <p id="setup-message" class="auth-message" role="status" aria-live="polite" hidden></p>
