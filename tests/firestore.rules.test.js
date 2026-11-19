@@ -230,6 +230,34 @@ test("a guest can atomically claim a selected available item and create parent-o
   assert.equal(claim.data().enteredName,"Aunt Casey");
 });
 
+test("two guests racing to claim the same item cannot both succeed", async () => {
+  await seedPublicShare();
+  const guestA=testEnv.authenticatedContext("guest-a").firestore();
+  const guestB=testEnv.authenticatedContext("guest-b").firestore();
+  for (const db of [guestA, guestB]) {
+    await assertSucceeds(setDoc(doc(db,"guestSessions",db.app.options.appId === "guest-a" ? "guest-a" : "guest-b"),{
+      tokenHash:"token-hash-123",createdAt:serverTimestamp()
+    }));
+  }
+  const makeClaim = (db, name) => {
+    const batch=writeBatch(db);
+    batch.update(doc(db,"households","household-a","wishlistItems","item-selected"),{
+      availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
+    });
+    batch.set(doc(db,"households","household-a","claims","item-selected"),{
+      itemId:"item-selected",childId:"child-1",enteredName:name,
+      eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
+    });
+    return batch.commit();
+  };
+  const results=await Promise.allSettled([
+    makeClaim(guestA,"Guest A"),
+    makeClaim(guestB,"Guest B")
+  ]);
+  assert.equal(results.filter(result=>result.status==="fulfilled").length,1);
+  assert.equal(results.filter(result=>result.status==="rejected").length,1);
+});
+
 test("guests cannot claim unselected items, overwrite claims, or edit wishlist details", async () => {
   await seedPublicShare();
   const guest=testEnv.authenticatedContext("guest-1").firestore();
