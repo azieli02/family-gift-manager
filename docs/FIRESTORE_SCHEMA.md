@@ -72,10 +72,14 @@ The member document ID is the Firebase Authentication UID.
 ## Configurable labels
 
 `giftCategories/{categoryId}`
-- `label`, `color`, `sortOrder`, `active`.
+- `label`, `color` (hex), `sortOrder`, `active`, `createdAt`, `updatedAt`.
+- Each household seeds its own defaults on first use: Undecided, Santa, Stocking, Main, Advent.
+- Parents can add, rename, recolor, and archive categories. Archiving is soft; existing gifts retain their saved category. Renaming updates matching gift records.
 
 `giftStatuses/{statusId}`
-- `label`, `color`, `sortOrder`, `active`.
+- `label`, `color` (hex), `sortOrder`, `active`, `createdAt`, `updatedAt`.
+- Each household seeds its own defaults on first use: Need to buy, Bought, Wrapped.
+- Parents can add, rename, recolor, and archive statuses independently of categories. Archiving is soft; existing gifts retain their saved status. Renaming updates matching gift records.
 
 `wishlistCategories/{categoryId}`
 - `label`, `sortOrder`, `active`.
