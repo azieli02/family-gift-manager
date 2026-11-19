@@ -86,3 +86,20 @@ h1{margin:0;font-size:clamp(2rem,6vw,3rem);line-height:1.06;letter-spacing:-.045
 .gift-card-order{display:inline-flex;gap:4px}
 .order-gift{width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:#fbfaf7;color:var(--ink);font:inherit;cursor:pointer}
 .order-gift:disabled{opacity:.3;cursor:default}
+
+/* Configurable gift category and status settings */
+.settings-toggle{width:auto;margin:0 0 12px}
+.gift-settings{margin:0 0 20px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#fbfaf7}
+.gift-settings[hidden]{display:none}
+.gift-settings h2{margin:14px 0 6px;font-size:1.05rem}.gift-settings h2:first-child{margin-top:0}
+.gift-settings .section-copy{margin:0 0 12px}
+.settings-list{display:grid;gap:8px}
+.settings-row{display:grid;grid-template-columns:minmax(0,1fr) 42px auto auto;align-items:center;gap:8px;padding:8px;background:white;border:1px solid var(--line);border-radius:9px}
+.settings-row input.setting-label{min-width:0;min-height:38px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit}
+.settings-row input.setting-color,.settings-add-form input[type=color]{width:40px;height:38px;padding:2px;border:1px solid var(--line);border-radius:7px;background:white}
+.settings-row .secondary-button{width:auto;min-height:38px;margin:0;padding:7px 10px}
+.settings-row .text-button{margin:0;white-space:nowrap}.archived-label{color:var(--muted);font-size:.8rem}
+.settings-add-form{display:flex;gap:8px;margin:10px 0 18px}
+.settings-add-form input[name=label]{flex:1;min-width:0;min-height:40px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.settings-add-form .secondary-button{width:auto;min-height:40px;margin:0;padding:7px 12px}
+@media(max-width:520px){.settings-row{grid-template-columns:minmax(0,1fr) 40px auto}.settings-row .archive-setting,.settings-row .archived-label{grid-column:1/-1;justify-self:start}.settings-add-form{flex-wrap:wrap}.settings-add-form input[name=label]{flex-basis:60%}}
