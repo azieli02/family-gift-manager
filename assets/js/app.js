@@ -18,6 +18,7 @@ import {
   getFirestore,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -1204,8 +1205,40 @@ async function renderChildWishlist(user, household, householdId, child) {
           <div class="gift-prices"><span>Price: ${item.priceCents==null?"—":formatMoney(item.priceCents)}</span><span>${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
           ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
           ${item.claimedByName?'<p class="gift-meta">Claimed by '+escapeHtml(item.claimedByName)+'</p>':""}
+          ${item.availability==="claimed"?'<div class="gift-card-actions"><button class="text-button view-claim-history" data-id="'+escapeHtml(item.id)+'" type="button">Claim history</button><button class="text-button undo-wishlist-claim" data-id="'+escapeHtml(item.id)+'" type="button">Undo claim</button></div><div class="claim-history" id="claim-history-'+escapeHtml(item.id)+'" hidden></div>':""}
           <div class="gift-card-actions"><button class="text-button move-wishlist-up" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item up">↑</button><button class="text-button move-wishlist-down" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item down">↓</button><button class="text-button edit-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Edit</button><button class="text-button delete-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Delete</button></div></article>`;
       }).join("");
+      list.querySelectorAll(".view-claim-history").forEach(button=>button.addEventListener("click",async()=>{
+        const panel=list.querySelector("#claim-history-"+CSS.escape(button.dataset.id));
+        if(!panel)return;
+        if(!panel.hidden){panel.hidden=true;return;}
+        panel.hidden=false;panel.innerHTML='<p class="gift-meta">Loading claim history…</p>';
+        try{
+          const historyRef=collection(db,"households",householdId,"claims");
+          const history=await getDocs(query(historyRef,orderBy("createdAt","desc")));
+          const events=history.docs.map(row=>({id:row.id,...row.data()})).filter(event=>event.itemId===button.dataset.id);
+          panel.innerHTML=events.length?events.map(event=>'<p class="gift-meta">'+escapeHtml(event.eventType==="undone"?"Claim undone":"Claimed by "+(event.enteredName||"Guest"))+' · '+(event.createdAt?.toDate?escapeHtml(event.createdAt.toDate().toLocaleString()):"Time unavailable")+'</p>').join(""):'<p class="gift-meta">No claim history found.</p>';
+        }catch(error){panel.innerHTML='<p class="gift-meta">'+escapeHtml(friendlyError(error))+'</p>';}
+      }));
+      list.querySelectorAll(".undo-wishlist-claim").forEach(button=>button.addEventListener("click",async()=>{
+        const item=items.find(entry=>entry.id===button.dataset.id);
+        if(!item||item.availability!=="claimed")return;
+        if(!confirm('Undo the claim for "'+item.item+'"? It will become available to all gift-givers again.'))return;
+        button.disabled=true;
+        try{
+          const itemRef=doc(itemsRef,item.id);
+          const historyRef=collection(db,"households",householdId,"claims");
+          await runTransaction(db,async transaction=>{
+            const current=await transaction.get(itemRef);
+            if(!current.exists()||current.data().availability!=="claimed")throw new Error("This item is no longer marked as claimed.");
+            const priorName=current.data().claimedByName||"";
+            const undoRef=doc(historyRef);
+            transaction.update(itemRef,{availability:"available",claimedByName:null,claimedAt:null,updatedAt:serverTimestamp()});
+            transaction.set(undoRef,{itemId:item.id,childId:child.id,eventType:"undone",enteredName:priorName,createdAt:serverTimestamp()});
+          });
+          await loadItems();notice("Claim undone. The item is available again.","success");
+        }catch(error){notice(friendlyError(error),"error");button.disabled=false;}
+      }));
       list.querySelectorAll(".edit-wishlist-item").forEach(button=>button.addEventListener("click",()=>{
         const item=items.find(x=>x.id===button.dataset.id);if(!item)return;editingId=item.id;
         form.elements.item.value=item.item||"";form.elements.description.value=item.description||"";form.elements.url.value=item.url||"";
