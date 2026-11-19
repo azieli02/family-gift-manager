@@ -1304,11 +1304,34 @@ function formatMoney(cents) {
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 }
-function parseBirthday(value) {
+function normalizeBirthdayInput(value) {
   const input = String(value || "").trim();
+  if (!input) return "";
+  const separated = input.match(/^(\d{1,2})[/-](\d{1,2})$/);
+  let month, day;
+  if (separated) {
+    month = Number(separated[1]);
+    day = Number(separated[2]);
+  } else if (/^\d{3,4}$/.test(input)) {
+    const digits = input;
+    month = Number(digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2));
+    day = Number(digits.slice(-2));
+  } else {
+    return input;
+  }
+  return String(month).padStart(2, "0") + "/" + String(day).padStart(2, "0");
+}
+document.addEventListener("blur", event => {
+  if (event.target.matches('input[name="birthday"]')) {
+    event.target.value = normalizeBirthdayInput(event.target.value);
+  }
+}, true);
+
+function parseBirthday(value) {
+  const input = normalizeBirthdayInput(value);
   if (!input) return null;
-  const match = input.match(/^(\d{1,2})[/-](\d{1,2})$/);
-  if (!match) throw new Error("Enter a birthday as MM/DD, without a year.");
+  const match = input.match(/^(\d{2})\/(\d{2})$/);
+  if (!match) throw new Error("Enter a birthday as MM/DD, MMDD, or MDD.");
   const month = Number(match[1]), day = Number(match[2]);
   const check = new Date(2000, month - 1, day);
   if (month < 1 || month > 12 || day < 1 || check.getMonth() !== month - 1 || check.getDate() !== day) throw new Error("Enter a valid month and day.");
