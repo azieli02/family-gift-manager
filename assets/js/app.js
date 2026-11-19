@@ -226,7 +226,7 @@ async function renderHouseholdHome(user, household, householdId) {
         <p id="children-message" class="auth-message" role="status" aria-live="polite" hidden></p>
         <div id="children-list" class="children-list" aria-live="polite"><p class="empty-state">Loading children…</p></div>
       </section>
-      <section class="children-section"><h2>Household gifts</h2><p class="section-copy">Shared gifts, separate from children's spending totals.</p><button class="secondary-button" id="open-house-gifts" type="button">Open household gifts</button><button class="secondary-button" id="open-recipient-gifts" type="button">Open gifts for other people</button><button class="secondary-button" id="open-inventory" type="button">Open unassigned gift inventory</button></section>
+      <section class="children-section"><h2>Household gifts</h2><p class="section-copy">Shared gifts, separate from children's spending totals.</p><button class="secondary-button" id="open-house-gifts" type="button">Open household gifts</button><button class="secondary-button" id="open-recipient-gifts" type="button">Open gifts for other people</button><button class="secondary-button" id="open-inventory" type="button">Open unassigned gift inventory</button><button class="secondary-button" id="open-gift-givers" type="button">Manage wishlist gift-givers</button></section>
       <div class="account-details"><span class="detail-label">Signed in as</span><span id="account-email"></span></div>
     </section>`;
   document.querySelector("#household-title").textContent = household.name;
@@ -234,6 +234,7 @@ async function renderHouseholdHome(user, household, householdId) {
   document.querySelector("#open-house-gifts").addEventListener("click", () => renderHouseholdGifts(user, household, householdId));
   document.querySelector("#open-recipient-gifts").addEventListener("click", () => renderGiftRecipients(user, household, householdId));
   document.querySelector("#open-inventory").addEventListener("click", () => renderInventory(user, household, householdId));
+  document.querySelector("#open-gift-givers").addEventListener("click", () => renderGiftGivers(user, household, householdId));
   document.querySelector("#sign-out").addEventListener("click", () => signOut(auth));
   const childForm = document.querySelector("#child-form");
   const addButton = document.querySelector("#add-child");
@@ -947,6 +948,64 @@ async function renderInventory(user, household, householdId) {
   renderStatusSettings();await loadInventory();
 }
 
+
+async function renderGiftGivers(user, household, householdId) {
+  const ref=collection(db,"households",householdId,"giftGivers");
+  appRoot.innerHTML=`
+    <section class="dashboard-panel">
+      <button class="text-button" id="back-gift-givers" type="button">← Household</button>
+      <p class="eyebrow">Wishlists</p><h1>Gift-givers</h1>
+      <p class="welcome-copy">Manage the people who may shop from your children's wishlists. Each person can eventually have a separate selection for each child.</p>
+      <form id="gift-giver-form" class="gift-form">
+        <div class="field-group"><label>Name</label><input name="name" maxlength="80" required></div>
+        <div class="field-group"><label>Notes (optional)</label><textarea name="notes" rows="2" maxlength="1000"></textarea></div>
+        <div class="gift-form-actions"><button class="primary-button" id="save-gift-giver" type="submit">Add gift-giver</button><button class="secondary-button" id="cancel-gift-giver" type="button" hidden>Cancel</button></div>
+      </form>
+      <p class="auth-message" id="gift-giver-message" role="status" aria-live="polite" hidden></p>
+      <div id="gift-giver-list" class="gift-list"><p class="empty-state">Loading gift-givers…</p></div>
+    </section>`;
+  document.querySelector("#back-gift-givers").addEventListener("click",()=>renderHouseholdHome(user,household,householdId));
+  const form=document.querySelector("#gift-giver-form"),list=document.querySelector("#gift-giver-list"),message=document.querySelector("#gift-giver-message");
+  const save=document.querySelector("#save-gift-giver"),cancel=document.querySelector("#cancel-gift-giver");
+  let entries=[],editingId=null;
+  function notice(text,kind="info"){message.textContent=text;message.dataset.kind=kind;message.hidden=false;}
+  function reset(){editingId=null;form.reset();save.textContent="Add gift-giver";cancel.hidden=true;}
+  cancel.addEventListener("click",reset);
+  async function load(){
+    try{
+      const snap=await getDocs(query(ref,orderBy("name","asc")));
+      entries=snap.docs.map(row=>({id:row.id,...row.data()}));
+      const active=entries.filter(entry=>entry.active!==false);
+      if(!active.length){list.innerHTML='<p class="empty-state">No gift-givers added yet.</p>';return;}
+      list.innerHTML=active.map(entry=>`<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(entry.name)}</h3></div>
+        ${entry.notes?'<p>'+escapeHtml(entry.notes)+'</p>':""}
+        <div class="gift-card-actions"><button class="text-button edit-gift-giver" data-id="${escapeHtml(entry.id)}" type="button">Edit</button><button class="text-button archive-gift-giver" data-id="${escapeHtml(entry.id)}" type="button">Archive</button></div></article>`).join("");
+      list.querySelectorAll(".edit-gift-giver").forEach(button=>button.addEventListener("click",()=>{
+        const entry=entries.find(x=>x.id===button.dataset.id);if(!entry)return;
+        editingId=entry.id;form.elements.name.value=entry.name||"";form.elements.notes.value=entry.notes||"";
+        save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth",block:"start"});
+      }));
+      list.querySelectorAll(".archive-gift-giver").forEach(button=>button.addEventListener("click",async()=>{
+        const entry=entries.find(x=>x.id===button.dataset.id);if(!entry||!confirm("Archive "+entry.name+"? Existing wishlist links and history will be retained."))return;
+        button.disabled=true;
+        try{await updateDoc(doc(ref,entry.id),{active:false,updatedAt:serverTimestamp()});await load();notice("Gift-giver archived.","success");}
+        catch(error){notice(friendlyError(error),"error");button.disabled=false;}
+      }));
+    }catch(error){notice(friendlyError(error),"error");}
+  }
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();const name=form.elements.name.value.trim();if(!name)return;
+    save.disabled=true;
+    try{
+      const data={name,notes:form.elements.notes.value.trim(),active:true,updatedAt:serverTimestamp()};
+      if(editingId)await updateDoc(doc(ref,editingId),data);
+      else await addDoc(ref,{...data,createdAt:serverTimestamp()});
+      reset();await load();notice("Gift-giver saved.","success");
+    }catch(error){notice(friendlyError(error),"error");}
+    finally{save.disabled=false;}
+  });
+  await load();
+}
 
 async function renderChildWishlist(user, household, householdId, child) {
   const itemsRef=collection(db,"households",householdId,"wishlistItems");
