@@ -8,12 +8,17 @@ import {
   signOut
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
+  getDocs,
   getFirestore,
-  writeBatch,
-  serverTimestamp
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
@@ -149,7 +154,7 @@ async function renderSignedIn(user) {
     renderHouseholdSetup(user);
     return;
   }
-  renderHouseholdHome(user, householdSnap.data(), householdId);
+  await renderHouseholdHome(user, householdSnap.data(), householdId);
 }
 
 function renderHouseholdSetup(user) {
@@ -199,26 +204,86 @@ function renderHouseholdSetup(user) {
   setStatus("Setup needed");
 }
 
-function renderHouseholdHome(user, household, householdId) {
+async function renderHouseholdHome(user, household, householdId) {
   appRoot.innerHTML = `
-    <section class="auth-panel">
-      <p class="eyebrow">Your household</p>
-      <h1 id="household-title"></h1>
-      <p class="welcome-copy">Your private household space is set up.</p>
-      <div class="setup-note">
-        <strong>You're signed in as the owner.</strong>
-        <p>Next we'll add your children and build the gift lists. Other families will have separate household spaces.</p>
+    <section class="dashboard-panel">
+      <div class="dashboard-heading">
+        <div><p class="eyebrow">Your household</p><h1 id="household-title"></h1>
+          <p class="welcome-copy">Manage the children in your household. Gift lists will be connected to each child profile.</p></div>
+        <button class="secondary-button sign-out-button" id="sign-out" type="button">Sign out</button>
       </div>
-      <div class="account-details">
-        <span class="detail-label">Signed in as</span><span id="account-email"></span>
-        <span class="detail-label">Household ID</span><code id="household-id"></code>
-      </div>
-      <button class="secondary-button" id="sign-out" type="button">Sign out</button>
+      <section class="children-section" aria-labelledby="children-heading">
+        <h2 id="children-heading">Children</h2>
+        <p class="section-copy">Add each child once. You can update their details later.</p>
+        <form id="child-form" class="child-form">
+          <div class="field-group"><label for="child-name">Child's name</label>
+            <input id="child-name" name="name" maxlength="60" autocomplete="off" placeholder="Name" required></div>
+          <div class="field-group"><label for="child-birthday">Birthday <span class="optional-label">(optional)</span></label>
+            <input id="child-birthday" name="birthday" type="date"></div>
+          <button class="primary-button" id="add-child" type="submit">Add child</button>
+        </form>
+        <p id="children-message" class="auth-message" role="status" aria-live="polite" hidden></p>
+        <div id="children-list" class="children-list" aria-live="polite"><p class="empty-state">Loading children…</p></div>
+      </section>
+      <div class="account-details"><span class="detail-label">Signed in as</span><span id="account-email"></span></div>
     </section>`;
   document.querySelector("#household-title").textContent = household.name;
   document.querySelector("#account-email").textContent = user.email || "";
-  document.querySelector("#household-id").textContent = householdId;
   document.querySelector("#sign-out").addEventListener("click", () => signOut(auth));
+  const childForm = document.querySelector("#child-form");
+  const addButton = document.querySelector("#add-child");
+  const childList = document.querySelector("#children-list");
+  const childMessage = document.querySelector("#children-message");
+  function showChildMessage(message, kind = "info") {
+    childMessage.textContent = message; childMessage.dataset.kind = kind; childMessage.hidden = false;
+  }
+  async function loadChildren() {
+    childList.innerHTML = '<p class="empty-state">Loading children…</p>';
+    try {
+      const snapshot = await getDocs(query(collection(db, "households", householdId, "children"), orderBy("sortOrder", "asc")));
+      const children = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+      const active = children.filter(child => child.active !== false);
+      if (!active.length) { childList.innerHTML = '<p class="empty-state">No children added yet.</p>'; return; }
+      childList.innerHTML = active.map(child => `
+        <article class="child-card"><div class="child-card-main">
+          <h3>${escapeHtml(child.name || "Child")}</h3>
+          <p>${child.birthday ? "Birthday: " + escapeHtml(formatBirthday(child.birthday)) : "Birthday not added"}</p>
+        </div><button class="text-button deactivate-child" type="button" data-child-id="${escapeHtml(child.id)}">Remove</button></article>`).join("");
+      childList.querySelectorAll(".deactivate-child").forEach(button => button.addEventListener("click", async () => {
+        const child = children.find(item => item.id === button.dataset.childId);
+        if (!child || !confirm(`Remove ${child.name} from the active children list? Their records will be kept.`)) return;
+        button.disabled = true;
+        try {
+          await updateDoc(doc(db, "households", householdId, "children", child.id), { active: false, updatedAt: serverTimestamp() });
+          await loadChildren();
+        } catch (error) { showChildMessage(friendlyError(error), "error"); button.disabled = false; }
+      }));
+    } catch (error) { childList.innerHTML = ""; showChildMessage(friendlyError(error), "error"); }
+  }
+  childForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const name = childForm.elements.name.value.trim();
+    const birthday = childForm.elements.birthday.value;
+    if (!name) return;
+    addButton.disabled = true; addButton.textContent = "Adding…";
+    try {
+      const current = await getDocs(collection(db, "households", householdId, "children"));
+      await addDoc(collection(db, "households", householdId, "children"), {
+        name, displayName: name, birthday: birthday || null, active: true,
+        sortOrder: current.size * 100, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+      });
+      childForm.reset(); childMessage.hidden = true; await loadChildren();
+    } catch (error) { showChildMessage(friendlyError(error), "error"); }
+    finally { addButton.disabled = false; addButton.textContent = "Add child"; }
+  });
+  await loadChildren(); setStatus("Signed in");
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+}
+function formatBirthday(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
 }
 
 onAuthStateChanged(auth, user => {
