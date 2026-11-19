@@ -484,7 +484,6 @@ async function renderChildGiftList(user, household, householdId, child) {
         <div class="field-group"><label for="gift-paid">Paid price ($)</label><input id="gift-paid" name="paidPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
         <div class="field-group"><label for="gift-regular">Regular price ($)</label><input id="gift-regular" name="regularPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
         <div class="field-group"><label for="gift-store">Store</label><input id="gift-store" name="store" maxlength="100"></div>
-        <div class="field-group"><label for="gift-purchase-date">Purchase date</label><input id="gift-purchase-date" name="purchaseDate" type="date"></div>
         <div class="field-group gift-notes"><label for="gift-notes">Notes</label><textarea id="gift-notes" name="notes" rows="2" maxlength="1000"></textarea></div>
         <div class="gift-form-actions"><button class="primary-button" id="save-gift" type="submit">Add gift</button><button class="secondary-button" id="cancel-gift-edit" type="button" hidden>Cancel edit</button></div>
       </form>
@@ -610,7 +609,6 @@ async function renderChildGiftList(user, household, householdId, child) {
             <span>Regular: ${gift.regularPriceCents == null ? "—" : formatMoney(gift.regularPriceCents)}</span>
             <span>Savings: ${savings == null ? "—" : formatMoney(savings)}</span>
           </div>
-          ${gift.purchaseDate ? '<p class="gift-meta">Purchased: ' + escapeHtml(formatBirthday(gift.purchaseDate)) + '</p>' : ""}
           ${gift.notes ? '<p class="gift-notes-text">' + escapeHtml(gift.notes) + '</p>' : ""}
           <div class="gift-card-actions">
             <label class="status-control">Status
@@ -728,7 +726,6 @@ async function renderChildGiftList(user, household, householdId, child) {
         form.elements.paidPrice.value = gift.paidPriceCents == null ? "" : (gift.paidPriceCents / 100).toFixed(2);
         form.elements.regularPrice.value = gift.regularPriceCents == null ? "" : (gift.regularPriceCents / 100).toFixed(2);
         form.elements.store.value = gift.store || "";
-        form.elements.purchaseDate.value = gift.purchaseDate || "";
         form.elements.notes.value = gift.notes || "";
         save.textContent = "Save changes"; cancelEdit.hidden = false;
         form.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -739,7 +736,7 @@ async function renderChildGiftList(user, household, householdId, child) {
     event.preventDefault();
     const item = form.elements.item.value.trim();
     if (!item) return;
-    save.disabled = true; save.textContent = "Adding…";
+    save.disabled = true; save.textContent = editingGiftId ? "Saving…" : "Adding…";
     try {
       const paid = form.elements.paidPrice.value;
       const regular = form.elements.regularPrice.value;
@@ -747,7 +744,7 @@ async function renderChildGiftList(user, household, householdId, child) {
         item, category: form.elements.category.value, status: form.elements.status.value,
         paidPriceCents: paid === "" ? null : Math.round(Number(paid) * 100),
         regularPriceCents: regular === "" ? null : Math.round(Number(regular) * 100),
-        store: form.elements.store.value.trim(), purchaseDate: form.elements.purchaseDate.value || null,
+        store: form.elements.store.value.trim(),
         notes: form.elements.notes.value.trim(), updatedAt: serverTimestamp()
       };
       if (editingGiftId) {
@@ -759,9 +756,9 @@ async function renderChildGiftList(user, household, householdId, child) {
           ...giftData, childId: child.id, sortOrder: count * 100, createdAt: serverTimestamp()
         });
       }
-      resetGiftForm(); message.hidden = true; await loadGifts();
+      resetGiftForm(); await loadGifts(); message.textContent = "Gift saved."; message.dataset.kind = "success"; message.hidden = false;
     } catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; }
-    finally { save.disabled = false; if (!editingGiftId) save.textContent = "Add gift"; }
+    finally { save.disabled = false; save.textContent = editingGiftId ? "Save changes" : "Add gift"; }
   });
   try { await loadGiftSettings(); } catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; }
   await loadGifts();
