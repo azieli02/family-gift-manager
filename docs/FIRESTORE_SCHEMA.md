@@ -85,7 +85,7 @@ The member document ID is the Firebase Authentication UID.
 - Parents can add, rename, recolor, and archive statuses independently of categories. Archiving is soft; existing gifts retain their saved status. Renaming updates matching gift records.
 
 `wishlistCategories/{categoryId}`
-- `label`, `sortOrder`, `active`.
+- `label`, `sortOrder`, `active`, `createdAt`, `updatedAt`. Defaults: Books, Toys, Clothing, Arts & Crafts, Tech, Games, Experiences, Miscellaneous. Parents can add, rename, and archive categories.
 
 ## Master wishlists
 
@@ -99,6 +99,7 @@ The member document ID is the Firebase Authentication UID.
   url: "https://example.com/product",
   priceCents: 4999,
   categoryId: "toys-category-id",
+  categoryLabel: "Toys",
   availability: "available", // available | claimed | unavailable
   claimedByName: null,       // self-reported guest-entered name
   claimedAt: null,           // Firestore Timestamp
@@ -108,7 +109,7 @@ The member document ID is the Firebase Authentication UID.
 }
 ```
 
-Each item exists once. Curated gift-giver links select IDs from this collection; they do not create duplicate wishlist items.
+Each item exists once. Curated gift-giver links select IDs from this collection; they do not create duplicate wishlist items. Parents can reorder items by dragging or with up/down controls; the order is persisted in `sortOrder`. Editing an already-claimed item preserves its claimed state unless the parent explicitly changes availability.
 
 ## Share links
 
