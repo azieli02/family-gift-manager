@@ -102,3 +102,30 @@ test("clients cannot access public guest shares yet", async () => {
   const db = testEnv.authenticatedContext("parent-a").firestore();
   await assertFails(getDoc(doc(db, "publicShares", "some-token")));
 });
+
+test("a parent can create a valid child profile in their household", async () => {
+  const db = await createHouseholdAs("parent-a", "household-a");
+  await assertSucceeds(setDoc(doc(db, "households", "household-a", "children", "child-1"), {
+    name: "Casey",
+    displayName: "Casey",
+    birthday: "2018-04-12",
+    active: true,
+    sortOrder: 0,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  }));
+});
+
+test("child profiles reject unexpected fields", async () => {
+  const db = await createHouseholdAs("parent-a", "household-a");
+  await assertFails(setDoc(doc(db, "households", "household-a", "children", "child-1"), {
+    name: "Casey",
+    displayName: "Casey",
+    birthday: null,
+    active: true,
+    sortOrder: 0,
+    privateAdminFlag: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  }));
+});
