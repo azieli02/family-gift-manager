@@ -355,8 +355,8 @@ async function renderChildGiftList(user, household, householdId, child) {
           <div class="gift-card-top"><h3>${escapeHtml(gift.item)}</h3><span class="gift-status">${escapeHtml(gift.status)}</span></div>
           <p>${escapeHtml(gift.category)}${gift.store ? " · " + escapeHtml(gift.store) : ""}</p>
           <div class="gift-prices">
-            <span>Paid: ${gift.paidPrice == null ? "—" : "$" + Number(gift.paidPrice).toFixed(2)}</span>
-            <span>Regular: ${gift.regularPrice == null ? "—" : "$" + Number(gift.regularPrice).toFixed(2)}</span>
+            <span>Paid: ${gift.paidPriceCents == null ? "—" : "$" + (Number(gift.paidPriceCents) / 100).toFixed(2)}</span>
+            <span>Regular: ${gift.regularPriceCents == null ? "—" : "$" + (Number(gift.regularPriceCents) / 100).toFixed(2)}</span>
           </div>
           ${gift.notes ? '<p class="gift-notes-text">' + escapeHtml(gift.notes) + '</p>' : ""}
         </article>`).join("");
@@ -375,8 +375,8 @@ async function renderChildGiftList(user, household, householdId, child) {
       await addDoc(collection(db, "households", householdId, "gifts"), {
         childId: child.id, item, category: form.elements.category.value,
         status: form.elements.status.value,
-        paidPrice: paid === "" ? null : Number(paid),
-        regularPrice: regular === "" ? null : Number(regular),
+        paidPriceCents: paid === "" ? null : Math.round(Number(paid) * 100),
+        regularPriceCents: regular === "" ? null : Math.round(Number(regular) * 100),
         store: form.elements.store.value.trim(), notes: form.elements.notes.value.trim(),
         sortOrder: count * 100, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
       });
