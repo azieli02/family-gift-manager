@@ -219,7 +219,7 @@ test("a guest can atomically claim a selected available item and create parent-o
   batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
     availability:"claimed",claimedByName:"Aunt Casey",claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
   });
-  batch.set(doc(guest,"households","household-a","claims","claim-1"),{
+  batch.set(doc(guest,"households","household-a","claims","item-selected"),{
     itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",
     eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
   });
@@ -250,7 +250,7 @@ test("guests cannot claim unselected items, overwrite claims, or edit wishlist d
     itemId:"item-selected",childId:"child-1",enteredName:"Guest",
     eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
   });
-  await assertSucceeds(batch.commit());
+  await assertFails(batch.commit());
   await assertFails(updateDoc(doc(guest,"households","household-a","wishlistItems","item-selected"),{
     availability:"claimed",claimedByName:"Another guest",claimedAt:serverTimestamp()
   }));
