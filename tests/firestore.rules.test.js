@@ -234,8 +234,8 @@ test("two guests racing to claim the same item cannot both succeed", async () =>
   await seedPublicShare();
   const guestA=testEnv.authenticatedContext("guest-a").firestore();
   const guestB=testEnv.authenticatedContext("guest-b").firestore();
-  for (const db of [guestA, guestB]) {
-    await assertSucceeds(setDoc(doc(db,"guestSessions",db.app.options.appId === "guest-a" ? "guest-a" : "guest-b"),{
+  for (const [db,uid] of [[guestA,"guest-a"],[guestB,"guest-b"]]) {
+    await assertSucceeds(setDoc(doc(db,"guestSessions",uid),{
       tokenHash:"token-hash-123",createdAt:serverTimestamp()
     }));
   }
