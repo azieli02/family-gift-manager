@@ -205,6 +205,7 @@ function renderHouseholdSetup(user) {
     batch.set(userRef, { householdIds: [householdRef.id], createdAt: serverTimestamp() });
     try {
       await batch.commit();
+      await renderSignedIn(user);
     } catch (error) {
       showMessage(friendlyError(error), "error");
       button.disabled = false;
