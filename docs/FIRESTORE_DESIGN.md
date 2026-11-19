@@ -74,32 +74,46 @@ The projection is a read facade for the master records, not an independently edi
 
 A likely structure is a token-addressed public link document with selected item references, plus a single canonical guest-safe state/projection per master item. The exact paths and rules are not finalized until the access tests pass. This avoids exposing household IDs, parent UIDs, budgets, private notes, gift-giver directories, purchase records, or claim attribution.
 
-## 4. Shared claim state
+## 4. Guest claim flow
 
-Each master wishlist item has exactly one claim state, shared by every filtered view that includes it:
-- available
-- claimed
-- unavailable (for example, no longer wanted)
+Each master wishlist item has exactly one shared availability state. A claim updates the master item, so every filtered link containing it immediately reflects the same state.
 
-A claim changes the state of the underlying master item. Every gift-giver's filtered view reflects that state because they all reference the same item/state.
+### Guest experience
 
-The public-facing state must not contain a person's name, email, or other claimant identity.
+1. Guest taps **I'll get this!** (or **Got it!**).
+2. A small confirmation prompt asks them to enter their name.
+3. They confirm the claim.
+4. The item remains visible but is marked **Claimed** and grayed out. The guest view may show the entered name.
+5. Parents can see the claimant name and timestamp and can undo the claim.
 
-### Claim attribution
+The name is self-reported, not identity-verified. This is intentional: the goal is to make family use clear and reduce accidental taps, not to authenticate gift-givers.
 
-The parent needs to know which gift-giver link was used. Keep that attribution in a separate parent-only claim record, mapping an opaque share-link identifier to the claim event. Never expose that mapping to guests.
+### Master wishlist item claim fields
 
-### Race safety
+- availability (Available, Claimed, No longer wanted)
+- claimedByName (entered by the guest; only shown in guest view if desired)
+- claimedAt (Firestore timestamp)
 
-The claim operation must be atomic:
-1. Confirm the item is currently available.
-2. Confirm the requesting share link is entitled to show that item.
-3. Change the one shared claim state to claimed.
-4. Record private attribution to the share link.
+The claim prompt requires an explicit confirmation after name entry. Parent edits can clear the claim fields and return the item to Available.
 
-Two simultaneous guests must not both succeed. A Firestore transaction or atomic batch plus restrictive Security Rules may be viable on Spark, but rules must prove both link authorization and the private attribution write. Firestore rules cannot run arbitrary server logic or safely infer a caller's link merely because the frontend says so.
+### Parent claim history
 
-**Important unresolved implementation detail:** Security Rules need a verifiable way to connect a guest's token-scoped claim request to the canonical item update and private attribution record in one atomic operation, without putting the secret token or claimant identity into public data. We must validate this in the Emulator Suite before choosing the exact document paths. If the no-Cloud-Functions approach cannot meet that bar, we should discuss the tradeoff rather than weaken the rules.
+Keep a parent-only claim history record for each claim event:
+- itemId
+- enteredName
+- claimedAt
+- eventType (claimed or undone)
+- optional shareLinkId for internal troubleshooting, if readily available
+
+This provides a useful timeline, including when a parent reverses a claim. The entered name is the primary attribution shown to parents; it is not proof of identity.
+
+### Guest write permissions
+
+Firestore Security Rules should allow a guest to change only the claim-related fields on an item they are authorized to see through that link. They must not be able to edit item name, description, URL, price, category, or sort order. A guest should only be able to claim an item included in that link's selected items, and only while it is Available.
+
+A claim should be a single atomic operation that changes the master item's claim fields and adds the corresponding history event. The rules should reject a claim if the item is no longer Available, so two guests cannot both successfully claim it. The exact transaction/batch rule pattern must be tested in the Firebase Emulator Suite.
+
+This is intentionally a lightweight family workflow. Do not build a complex identity-verification or anti-fraud system for the entered name.
 
 ## 5. Required security tests
 
@@ -113,8 +127,8 @@ Before using real family data, test:
 6. Guest cannot claim an already-claimed or unavailable item.
 7. Two simultaneous claims cannot both succeed.
 8. A claim is reflected in every filtered view containing that master item.
-9. Guest reads never reveal gift-giver identity or private claim history.
-10. Parent can undo a claim and all filtered views reflect the change.
+9. Guest reads never reveal parent-only claim history or household-private data.
+10. Parent can undo a claim, clear the claim fields, and all filtered views reflect the change.
 
 Use Firebase Local Emulator Suite and automated rules tests. Start with deny-all rules; never deploy open read/write rules.
 
@@ -130,7 +144,7 @@ Use Firebase Local Emulator Suite and automated rules tests. Start with deny-all
 
 - Exact fields for gift, inventory, child, recipient, gift-giver, and wishlist documents.
 - The secure guest token lookup and token-scoped read pattern.
-- The Spark-compatible atomic claim plus private attribution pattern.
+- The exact atomic claim-plus-history write pattern and guest-visible treatment of the entered name.
 - Household invitation, membership, and deactivation workflow.
 - Whether owner and parent roles need different permissions in the first release.
 
