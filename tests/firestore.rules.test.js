@@ -129,3 +129,13 @@ test("child profiles reject unexpected fields", async () => {
     updatedAt: serverTimestamp()
   }));
 });
+
+test("a parent can manage inventory items and their configurable statuses", async () => {
+  const db = await createHouseholdAs("parent-a", "household-a");
+  await assertSucceeds(setDoc(doc(db, "households", "household-a", "inventory", "inventory-1"), {
+    item: "Board game", status: "Available", paidPriceCents: 2500
+  }));
+  await assertSucceeds(setDoc(doc(db, "households", "household-a", "inventoryStatuses", "available"), {
+    label: "Available", color: "#dce8df", sortOrder: 100, active: true
+  }));
+});
