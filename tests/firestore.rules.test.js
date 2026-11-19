@@ -258,18 +258,18 @@ test("a guest can atomically claim a selected available item and create parent-o
   await assertSucceeds(setDoc(doc(guest,"guestSessions","guest-1"),{
     tokenHash:"token-hash-123",createdAt:serverTimestamp()
   }));
-  const batch=writeBatch(guest);
+  const batch=writeBatch(guest),eventId="claim-event-1";
   batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
-    availability:"claimed",claimedByName:"Aunt Casey",claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
+    availability:"claimed",claimedByName:"Aunt Casey",claimEventId:"prior-event",claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
   });
-  batch.set(doc(guest,"households","household-a","claims","item-selected"),{
+  batch.set(doc(guest,"households","household-a","claims",eventId),{
     itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",
     eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
   });
   await assertSucceeds(batch.commit());
-  await assertFails(getDoc(doc(guest,"households","household-a","claims","item-selected")));
+  await assertFails(getDoc(doc(guest,"households","household-a","claims",eventId)));
   const parent=testEnv.authenticatedContext("parent-a").firestore();
-  const claim=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","item-selected")));
+  const claim=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims",eventId)));
   assert.equal(claim.data().enteredName,"Aunt Casey");
 });
 
@@ -282,20 +282,20 @@ test("two guests racing to claim the same item cannot both succeed", async () =>
       tokenHash:"token-hash-123",createdAt:serverTimestamp()
     }));
   }
-  const makeClaim = (db, name) => {
+  const makeClaim = (db, name, eventId) => {
     const batch=writeBatch(db);
     batch.update(doc(db,"households","household-a","wishlistItems","item-selected"),{
-      availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
+      availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
     });
-    batch.set(doc(db,"households","household-a","claims","item-selected"),{
+    batch.set(doc(db,"households","household-a","claims",eventId),{
       itemId:"item-selected",childId:"child-1",enteredName:name,
       eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
     });
     return batch.commit();
   };
   const results=await Promise.allSettled([
-    makeClaim(guestA,"Guest A"),
-    makeClaim(guestB,"Guest B")
+    makeClaim(guestA,"Guest A","event-a"),
+    makeClaim(guestB,"Guest B","event-b")
   ]);
   assert.equal(results.filter(result=>result.status==="fulfilled").length,1);
   assert.equal(results.filter(result=>result.status==="rejected").length,1);
@@ -308,14 +308,14 @@ test("a parent can undo a guest claim and append an undo history event", async (
     await updateDoc(doc(db,"households","household-a","wishlistItems","item-selected"),{
       availability:"claimed",claimedByName:"Aunt Casey"
     });
-    await setDoc(doc(db,"households","household-a","claims","item-selected"),{
+    await setDoc(doc(db,"households","household-a","claims","prior-event"),{
       itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",eventType:"claimed"
     });
   });
   const parent=testEnv.authenticatedContext("parent-a").firestore();
   const batch=writeBatch(parent);
   batch.update(doc(parent,"households","household-a","wishlistItems","item-selected"),{
-    availability:"available",claimedByName:null,claimedAt:null
+    availability:"available",claimedByName:null,claimedAt:null,claimEventId:null
   });
   batch.set(doc(parent,"households","household-a","claims","undo-event"),{
     itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",eventType:"undone"
