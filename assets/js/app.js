@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/fireba
 import {
   createUserWithEmailAndPassword,
   getAuth,
+  signInAnonymously,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -1011,6 +1012,21 @@ async function renderGiftGivers(user, household, householdId) {
   await load();
 }
 
+async function sha256Hex(value) {
+  const bytes=new TextEncoder().encode(value);
+  const digest=await crypto.subtle.digest("SHA-256",bytes);
+  return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,"0")).join("");
+}
+function newShareToken() {
+  const bytes=crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"");
+}
+function shareUrl(token) {
+  const url=new URL(window.location.href);
+  url.searchParams.set("share",token);
+  return url.toString();
+}
+
 async function renderGiftGiverSelections(user, household, householdId, giver) {
   const childrenRef=collection(db,"households",householdId,"children");
   const children=(await getDocs(query(childrenRef,orderBy("sortOrder","asc")))).docs.map(row=>({id:row.id,...row.data()})).filter(child=>child.active!==false);
@@ -1050,10 +1066,26 @@ async function renderGiftGiverSelections(user, household, householdId, giver) {
         const selectedItemIds=[...itemList.querySelectorAll("input:checked")].map(input=>input.value);
         const existingLink=await getDoc(linkRef);
         const data={childId:child.id,giftGiverId:giver.id,active:true,selectedItemIds,updatedAt:serverTimestamp()};
-        if(existingLink.exists())await updateDoc(linkRef,data);
-        else await setDoc(linkRef,{...data,tokenHash:null,createdAt:serverTimestamp()});
+        let token=existingLink.exists()?existingLink.data().rawToken:null;
+        let tokenHash=existingLink.exists()?existingLink.data().tokenHash:null;
+        if(!tokenHash){token=newShareToken();tokenHash=await sha256Hex(token);}
+        const shareRef=doc(db,"publicShares",tokenHash);
+        const batch=writeBatch(db);
+        batch.set(linkRef,{...data,tokenHash,updatedAt:serverTimestamp(),...(existingLink.exists()?{}:{createdAt:serverTimestamp()})},{merge:true});
+        batch.set(shareRef,{householdId,childId:child.id,giftGiverId:giver.id,shareLinkId:linkId,selectedItemIds,active:true,updatedAt:serverTimestamp(),...(existingLink.exists()?{}:{createdAt:serverTimestamp()})},{merge:true});
+        await batch.commit();
         editor.remove();
         target.querySelector("#selection-count-"+CSS.escape(child.id)).textContent=selectedItemIds.length+" items selected";
+        const prior=target.querySelector("#share-url-"+CSS.escape(child.id));
+        if(prior)prior.remove();
+        if(token){
+          const link=document.createElement("div");link.className="auth-message";link.id="share-url-"+child.id;
+          link.innerHTML='<strong>Share link</strong><p><input readonly value="'+escapeHtml(shareUrl(token))+'" aria-label="Share link URL"></p><button class="secondary-button copy-share-link" type="button">Copy link</button>';
+          target.querySelector('[data-child-id="'+CSS.escape(child.id)+'"]').closest(".gift-card").appendChild(link);
+          link.querySelector(".copy-share-link").addEventListener("click",async()=>{await navigator.clipboard.writeText(shareUrl(token));notice("Link copied.","success");});
+        } else {
+          notice("Selection saved. The existing link token is retained; copy its URL from the saved link section if already available.","success");
+        }
         notice("Wishlist selection saved.","success");
       }catch(error){notice(friendlyError(error),"error");button.disabled=false;}
     });
