@@ -409,7 +409,7 @@ async function renderHouseholdGifts(user, household, householdId) {
     }));
   }
   form.addEventListener("submit",async e=>{
-    e.preventDefault();const item=form.elements.item.value.trim();if(!item)return;
+    e.preventDefault();const item=form.elements.namedItem("item").value.trim();if(!item)return;
     save.disabled=true;save.textContent=editingId?"Saving…":"Adding…";
     const paid=form.elements.paidPrice.value,regular=form.elements.regularPrice.value;
     const data={item,category:form.elements.category.value,status:form.elements.status.value,paidPriceCents:paid===""?null:Math.round(Number(paid)*100),regularPriceCents:regular===""?null:Math.round(Number(regular)*100),store:form.elements.store.value.trim(),purchaseDate:form.elements.purchaseDate.value||null,notes:form.elements.notes.value.trim(),updatedAt:serverTimestamp()};
@@ -456,7 +456,7 @@ async function renderRecipientGiftList(user,household,householdId,recipient){
     list.querySelectorAll(".edit-recipient-gift").forEach(b=>b.addEventListener("click",()=>{const g=gifts.find(x=>x.id===b.dataset.id);editId=g.id;for(const field of ["item","category","status","store","purchaseDate","wishlistUrl","notes"])if(g[field]!=null){if(["category","status"].includes(field)&&![...form.elements[field].options].some(o=>o.value===g[field]))form.elements[field].add(new Option(g[field]+" (archived)",g[field]));form.elements[field].value=g[field];}form.elements.paidPrice.value=g.paidPriceCents==null?"":(g.paidPriceCents/100).toFixed(2);form.elements.regularPrice.value=g.regularPriceCents==null?"":(g.regularPriceCents/100).toFixed(2);save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth"});}));
     list.querySelectorAll(".delete-recipient-gift").forEach(b=>b.addEventListener("click",async()=>{const g=gifts.find(x=>x.id===b.dataset.id);if(!g||!confirm("Delete "+g.item+"? This cannot be undone."))return;b.disabled=true;try{await deleteDoc(doc(giftsRef,g.id));if(editId===g.id)reset();await load();notice("Gift deleted.","success");}catch(e){notice(friendlyError(e),"error");b.disabled=false;}}));
   }
-  form.addEventListener("submit",async e=>{e.preventDefault();const item=form.elements.item.value.trim();if(!item)return;save.disabled=true;const p=form.elements.paidPrice.value,r=form.elements.regularPrice.value;const data={item,category:form.elements.category.value,status:form.elements.status.value,paidPriceCents:p===""?null:Math.round(Number(p)*100),regularPriceCents:r===""?null:Math.round(Number(r)*100),store:form.elements.store.value.trim(),purchaseDate:form.elements.purchaseDate.value||null,wishlistUrl:form.elements.wishlistUrl.value.trim(),notes:form.elements.notes.value.trim(),updatedAt:serverTimestamp()};try{if(editId)await updateDoc(doc(giftsRef,editId),data);else await addDoc(giftsRef,{...data,giftType:"recipient",recipientId:recipient.id,childId:null,sortOrder:Date.now(),createdAt:serverTimestamp()});reset();await load();notice("Gift saved.","success");}catch(e){notice(friendlyError(e),"error");}finally{save.disabled=false;}});
+  form.addEventListener("submit",async e=>{e.preventDefault();const item=form.elements.namedItem("item").value.trim();if(!item)return;save.disabled=true;const p=form.elements.paidPrice.value,r=form.elements.regularPrice.value;const data={item,category:form.elements.category.value,status:form.elements.status.value,paidPriceCents:p===""?null:Math.round(Number(p)*100),regularPriceCents:r===""?null:Math.round(Number(r)*100),store:form.elements.store.value.trim(),purchaseDate:form.elements.purchaseDate.value||null,wishlistUrl:form.elements.wishlistUrl.value.trim(),notes:form.elements.notes.value.trim(),updatedAt:serverTimestamp()};try{if(editId)await updateDoc(doc(giftsRef,editId),data);else await addDoc(giftsRef,{...data,giftType:"recipient",recipientId:recipient.id,childId:null,sortOrder:Date.now(),createdAt:serverTimestamp()});reset();await load();notice("Gift saved.","success");}catch(e){notice(friendlyError(e),"error");}finally{save.disabled=false;}});
   try{await load();}catch(e){notice(friendlyError(e),"error");}
 }
 
@@ -711,7 +711,7 @@ async function renderChildGiftList(user, household, householdId, child) {
         const gift = gifts.find(item => item.id === button.dataset.giftId);
         if (!gift) return;
         editingGiftId = gift.id;
-        form.elements.item.value = gift.item || "";
+        form.elements.namedItem("item").value = gift.item || "";
         const categoryValue = gift.category || "Undecided";
         const statusValue = gift.status || "Need to buy";
         [[form.elements.category, categoryValue], [form.elements.status, statusValue]].forEach(([select, value]) => {
@@ -734,7 +734,7 @@ async function renderChildGiftList(user, household, householdId, child) {
   }
   form.addEventListener("submit", async event => {
     event.preventDefault();
-    const item = form.elements.item.value.trim();
+    const item = form.elements.namedItem("item").value.trim();
     if (!item) return;
     save.disabled = true; save.textContent = editingGiftId ? "Saving…" : "Adding…";
     try {
@@ -867,7 +867,7 @@ async function renderInventory(user, household, householdId) {
       }).join("");
       list.querySelectorAll(".edit-inventory").forEach(button=>button.addEventListener("click",()=>{
         const item=items.find(i=>i.id===button.dataset.id);if(!item)return;editingId=item.id;
-        form.elements.item.value=item.item||"";form.elements.intendedUse.value=item.intendedUse||"";
+        form.elements.namedItem("item").value=item.item||"";form.elements.intendedUse.value=item.intendedUse||"";
         refreshStatusSelect(item.status);form.elements.paidPrice.value=item.paidPriceCents==null?"":(item.paidPriceCents/100).toFixed(2);
         form.elements.regularPrice.value=item.regularPriceCents==null?"":(item.regularPriceCents/100).toFixed(2);
         form.elements.store.value=item.store||"";form.elements.purchaseDate.value=item.purchaseDate||"";form.elements.notes.value=item.notes||"";
@@ -939,7 +939,7 @@ async function renderInventory(user, household, householdId) {
     });
   }
   form.addEventListener("submit",async event=>{
-    event.preventDefault();const item=form.elements.item.value.trim();if(!item)return;
+    event.preventDefault();const item=form.elements.namedItem("item").value.trim();if(!item)return;
     save.disabled=true;save.textContent=editingId?"Saving…":"Adding…";
     try{
       const paid=form.elements.paidPrice.value,regular=form.elements.regularPrice.value;
@@ -1239,7 +1239,7 @@ async function renderChildWishlist(user, household, householdId, child) {
       }));
       list.querySelectorAll(".edit-wishlist-item").forEach(button=>button.addEventListener("click",()=>{
         const item=items.find(x=>x.id===button.dataset.id);if(!item)return;editingId=item.id;
-        form.elements.item.value=item.item||"";form.elements.description.value=item.description||"";form.elements.url.value=item.url||"";
+        form.elements.namedItem("item").value=item.item||"";form.elements.description.value=item.description||"";form.elements.url.value=item.url||"";
         form.elements.price.value=item.priceCents==null?"":(item.priceCents/100).toFixed(2);
         refreshCategorySelect(item.categoryId);
         const availability=form.elements.availability;
@@ -1277,7 +1277,7 @@ async function renderChildWishlist(user, household, householdId, child) {
     }catch(error){notice(friendlyError(error),"error");}
   }
   form.addEventListener("submit",async event=>{
-    event.preventDefault();const item=form.elements.item.value.trim();if(!item)return;
+    event.preventDefault();const item=form.elements.namedItem("item").value.trim();if(!item)return;
     save.disabled=true;
     try{
       const price=form.elements.price.value;
