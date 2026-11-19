@@ -224,9 +224,9 @@ test("a guest can atomically claim a selected available item and create parent-o
     eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
   });
   await assertSucceeds(batch.commit());
-  await assertFails(getDoc(doc(guest,"households","household-a","claims","claim-1")));
+  await assertFails(getDoc(doc(guest,"households","household-a","claims","item-selected")));
   const parent=testEnv.authenticatedContext("parent-a").firestore();
-  const claim=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","claim-1")));
+  const claim=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","item-selected")));
   assert.equal(claim.data().enteredName,"Aunt Casey");
 });
 
