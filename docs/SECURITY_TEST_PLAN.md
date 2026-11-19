@@ -51,7 +51,7 @@ Before testing guest links, enable **Authentication → Sign-in method → Anony
 - The raw random token belongs in the URL only. The client hashes it with SHA-256 and uses the hash as the public share document ID.
 - `guestSessions/{uid}` binds an anonymous Firebase Auth UID to one active token hash.
 - Guest clients read each selected item by document ID. Collection listing is denied to guests.
-- A guest claim is one Firestore batch: update only the canonical wishlist item's claim fields and create `claims/{itemId}`. Rules use `getAfter()` to require both writes to agree; the deterministic history ID also prevents a second claim event from being created for the same active claim.
+- A guest claim is one Firestore batch: update only the canonical wishlist item's claim fields and create `claims/{uniqueEventId}`. The wishlist item stores that event ID in `claimEventId`; rules use `getAfter()` to require both writes to agree. Each later claim after an undo uses a new event ID, preserving the full history.
 - A guest cannot undo a claim. Only an active household member can reset the item and write an undo history event.
 - Enable Firebase Anonymous Authentication in the Firebase console before enabling the guest UI. It is free under the Firebase Spark plan.
 
