@@ -59,11 +59,10 @@ The member document ID is the Firebase Authentication UID.
 
 ## Our Gifts
 
-`gifts/{giftId}`
-- `scope`: `child`, `household`, or `recipient`.
-- `childId`, `recipientId` as applicable; null when not applicable.
-- `item`, `categoryId`, `paidPriceCents`, `regularPriceCents`, `store`, `statusId`, `notes`, `purchaseDate`, `sortOrder`, timestamps.
-- Savings is calculated as regular price minus paid price; do not store a second editable savings value.
+`households/{householdId}/gifts/{giftId}`
+- Current child Christmas-list prototype fields: `childId`, `item`, `category` (initially Undecided, Santa, Stocking, Main, Advent), `status` (initially Need to buy, Bought, Wrapped), `paidPriceCents`, `regularPriceCents`, `store`, `notes`, `sortOrder`, `createdAt`, `updatedAt`.
+- Prices are stored as integer cents. Savings is calculated as regular price minus paid price; do not store an editable savings value.
+- Planned expansion adds `scope` (child, household, recipient), recipient references, configurable category/status document IDs, and purchase date.
 
 `inventory/{inventoryItemId}`
 - `item`, `store`, `paidPriceCents`, `regularPriceCents`, `purchaseDate`, `notes`, `intendedUse`, `status`, `assignedGiftId` (optional), timestamps.
