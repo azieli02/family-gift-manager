@@ -260,7 +260,7 @@ test("a guest can atomically claim a selected available item and create parent-o
   }));
   const batch=writeBatch(guest),eventId="claim-event-1";
   batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
-    availability:"claimed",claimedByName:"Aunt Casey",claimEventId:"prior-event",claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
+    availability:"claimed",claimedByName:"Aunt Casey",claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
   });
   batch.set(doc(guest,"households","household-a","claims",eventId),{
     itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",
@@ -325,6 +325,42 @@ test("a parent can undo a guest claim and append an undo history event", async (
   assert.equal(item.data().availability,"available");
   const event=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","undo-event")));
   assert.equal(event.data().eventType,"undone");
+});
+
+test("a guest can claim an item again after a parent undo, with a new history event", async () => {
+  await seedPublicShare();
+  const guest=testEnv.authenticatedContext("guest-repeat").firestore();
+  await assertSucceeds(setDoc(doc(guest,"guestSessions","guest-repeat"),{
+    tokenHash:"token-hash-123",createdAt:serverTimestamp()
+  }));
+  const parent=testEnv.authenticatedContext("parent-a").firestore();
+  const claim=(eventId,name)=> {
+    const batch=writeBatch(guest);
+    batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
+      availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
+    });
+    batch.set(doc(guest,"households","household-a","claims",eventId),{
+      itemId:"item-selected",childId:"child-1",enteredName:name,eventType:"claimed",
+      createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
+    });
+    return batch.commit();
+  };
+  await assertSucceeds(claim("claim-first","Aunt Casey"));
+  const undo=writeBatch(parent);
+  undo.update(doc(parent,"households","household-a","wishlistItems","item-selected"),{
+    availability:"available",claimedByName:null,claimedAt:null,claimEventId:null
+  });
+  undo.set(doc(parent,"households","household-a","claims","undo-first"),{
+    itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",eventType:"undone"
+  });
+  await assertSucceeds(undo.commit());
+  await assertSucceeds(claim("claim-second","Grandma"));
+  const first=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","claim-first")));
+  const second=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","claim-second")));
+  const undoEvent=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","undo-first")));
+  assert.equal(first.data().enteredName,"Aunt Casey");
+  assert.equal(second.data().enteredName,"Grandma");
+  assert.equal(undoEvent.data().eventType,"undone");
 });
 
 test("guests cannot claim unselected items, overwrite claims, or edit wishlist details", async () => {
