@@ -364,11 +364,11 @@ async function renderChildGiftList(user, household, householdId, child) {
         .filter(gift => gift.childId === child.id)
         .sort((a,b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       if (!gifts.length) { list.innerHTML = '<p class="empty-state">No gifts added yet.</p>'; return; }
-      list.innerHTML = gifts.map(gift => {
+      list.innerHTML = gifts.map((gift, index) => {
         const savings = gift.paidPriceCents != null && gift.regularPriceCents != null
           ? Number(gift.regularPriceCents) - Number(gift.paidPriceCents) : null;
         return `
-        <article class="gift-card">
+        <article class="gift-card" draggable="true" data-gift-id="${escapeHtml(gift.id)}">
           <div class="gift-card-top"><h3>${escapeHtml(gift.item)}</h3><span class="gift-status">${escapeHtml(gift.status)}</span></div>
           <p>${escapeHtml(gift.category)}${gift.store ? " · " + escapeHtml(gift.store) : ""}</p>
           <div class="gift-prices">
@@ -384,10 +384,72 @@ async function renderChildGiftList(user, household, householdId, child) {
                 ${["Need to buy","Bought","Wrapped"].map(value => '<option' + (gift.status === value ? ' selected' : '') + '>' + value + '</option>').join("")}
               </select>
             </label>
+            <div class="gift-card-order" aria-label="Reorder gift">
+              <button class="order-gift" type="button" data-direction="up" data-gift-id="${escapeHtml(gift.id)}" aria-label="Move ${escapeHtml(gift.item)} up" ${index === 0 ? "disabled" : ""}>↑</button>
+              <button class="order-gift" type="button" data-direction="down" data-gift-id="${escapeHtml(gift.id)}" aria-label="Move ${escapeHtml(gift.item)} down" ${index === gifts.length - 1 ? "disabled" : ""}>↓</button>
+            </div>
             <button class="text-button edit-gift" type="button" data-gift-id="${escapeHtml(gift.id)}">Edit</button>
           </div>
         </article>`;
       }).join("");
+      let draggedGiftId = null;
+      list.querySelectorAll(".gift-card").forEach(card => {
+        card.addEventListener("dragstart", event => {
+          draggedGiftId = card.dataset.giftId;
+          card.classList.add("is-dragging");
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedGiftId);
+        });
+        card.addEventListener("dragend", () => {
+          draggedGiftId = null;
+          list.querySelectorAll(".gift-card").forEach(item => item.classList.remove("is-dragging", "drop-target"));
+        });
+        card.addEventListener("dragover", event => {
+          event.preventDefault();
+          if (card.dataset.giftId !== draggedGiftId) card.classList.add("drop-target");
+        });
+        card.addEventListener("dragleave", () => card.classList.remove("drop-target"));
+        card.addEventListener("drop", async event => {
+          event.preventDefault();
+          card.classList.remove("drop-target");
+          const fromId = event.dataTransfer.getData("text/plain") || draggedGiftId;
+          const toId = card.dataset.giftId;
+          if (!fromId || fromId === toId) return;
+          const reordered = [...gifts];
+          const fromIndex = reordered.findIndex(item => item.id === fromId);
+          const toIndex = reordered.findIndex(item => item.id === toId);
+          if (fromIndex < 0 || toIndex < 0) return;
+          const [moved] = reordered.splice(fromIndex, 1);
+          reordered.splice(toIndex, 0, moved);
+          await saveGiftOrder(reordered);
+        });
+      });
+      list.querySelectorAll(".order-gift").forEach(button => button.addEventListener("click", async () => {
+        const reordered = [...gifts];
+        const index = reordered.findIndex(item => item.id === button.dataset.giftId);
+        const next = button.dataset.direction === "up" ? index - 1 : index + 1;
+        if (index < 0 || next < 0 || next >= reordered.length) return;
+        [reordered[index], reordered[next]] = [reordered[next], reordered[index]];
+        await saveGiftOrder(reordered);
+      }));
+      async function saveGiftOrder(reordered) {
+        list.querySelectorAll("button, select").forEach(control => control.disabled = true);
+        try {
+          const batch = writeBatch(db);
+          reordered.forEach((gift, index) => {
+            batch.update(doc(db, "households", householdId, "gifts", gift.id), {
+              sortOrder: (index + 1) * 100, updatedAt: serverTimestamp()
+            });
+          });
+          await batch.commit();
+          await loadGifts();
+        } catch (error) {
+          message.textContent = friendlyError(error);
+          message.dataset.kind = "error";
+          message.hidden = false;
+          await loadGifts();
+        }
+      }
       list.querySelectorAll(".gift-status-select").forEach(select => select.addEventListener("change", async () => {
         select.disabled = true;
         try { await updateDoc(doc(db, "households", householdId, "gifts", select.dataset.giftId), { status: select.value, updatedAt: serverTimestamp() }); }
