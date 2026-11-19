@@ -116,9 +116,18 @@ Each item exists once. Curated gift-giver links select IDs from this collection;
 `shareLinks/{shareLinkId}` (private parent-side record)
 - `childId`, `giftGiverId`, `active`, `selectedItemIds` (array of wishlist item IDs), `tokenHash`, timestamps.
 - One persistent link per gift-giver/child pair.
-- The raw token is only present in the URL and must not be stored in ordinary household-readable data.
+- Generate a cryptographically random URL token in the browser. Store only its SHA-256 hash in this private record and as the ID of `publicShares/{tokenHash}`. The raw token is never stored in Firestore.
 
-The guest-facing token lookup and filtered read model are deliberately not finalized here. Firestore rules do not receive the browser's URL/referrer as authorization context. We must prove how a guest's token authorizes reads and claims without allowing a token to be swapped in a client write or bypassing the selected-item filter.
+`publicShares/{tokenHash}` (minimal public-link metadata; direct reads require a matching guest session)
+- `householdId`, `childId`, `giftGiverId`, `shareLinkId`, `selectedItemIds`, `active`, timestamps.
+- Contains no wishlist item details or gift-giver personal notes. Guests cannot list this collection.
+- Parent writes must keep this record synchronized with the private `shareLinks` record in one batch.
+
+`guestSessions/{uid}`
+- `tokenHash`, `createdAt`, optional `lastSeenAt`.
+- One anonymous Firebase Auth UID is bound to one active share token. Guest access to a wishlist item is granted only when that item's ID is in the token's selected item IDs.
+
+Guest clients read selected wishlist items individually by document ID; they cannot list the household's wishlist collection. Claims update the one canonical `wishlistItems/{itemId}` document and create a matching `claims/{claimId}` history event in the same Firestore batch. Security Rules validate both writes with `getAfter()`, preserving one shared claim state across all links.
 
 ## Claim history
 
