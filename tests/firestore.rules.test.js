@@ -301,6 +301,32 @@ test("two guests racing to claim the same item cannot both succeed", async () =>
   assert.equal(results.filter(result=>result.status==="rejected").length,1);
 });
 
+test("a parent can undo a guest claim and append an undo history event", async () => {
+  await seedPublicShare();
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db=context.firestore();
+    await updateDoc(doc(db,"households","household-a","wishlistItems","item-selected"),{
+      availability:"claimed",claimedByName:"Aunt Casey"
+    });
+    await setDoc(doc(db,"households","household-a","claims","item-selected"),{
+      itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",eventType:"claimed"
+    });
+  });
+  const parent=testEnv.authenticatedContext("parent-a").firestore();
+  const batch=writeBatch(parent);
+  batch.update(doc(parent,"households","household-a","wishlistItems","item-selected"),{
+    availability:"available",claimedByName:null,claimedAt:null
+  });
+  batch.set(doc(parent,"households","household-a","claims","undo-event"),{
+    itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",eventType:"undone"
+  });
+  await assertSucceeds(batch.commit());
+  const item=await assertSucceeds(getDoc(doc(parent,"households","household-a","wishlistItems","item-selected")));
+  assert.equal(item.data().availability,"available");
+  const event=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","undo-event")));
+  assert.equal(event.data().eventType,"undone");
+});
+
 test("guests cannot claim unselected items, overwrite claims, or edit wishlist details", async () => {
   await seedPublicShare();
   const guest=testEnv.authenticatedContext("guest-1").firestore();
