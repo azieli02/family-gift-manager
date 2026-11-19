@@ -6,7 +6,7 @@ Run these tests in the Firebase Local Emulator Suite before deploying rules or e
 
 `firestore.rules` currently permits authenticated active household members to access their household data. It denies all guest access and denies all access to paths not explicitly allowed. Membership documents cannot be changed from the client in this baseline.
 
-This is intentionally a safe starting point, not the completed guest wishlist ruleset. Do not deploy the app expecting guest links to work yet.
+Guest wishlist access is being introduced through Firebase Anonymous Authentication. A guest session is bound to one unguessable token hash. The public share document exposes only its selected item IDs and household/child references; guests fetch selected wishlist documents individually, not by listing a household collection. Guest claim writes must atomically update the shared wishlist item and create a claim-history event. Do not deploy until the complete emulator suite passes and the client flow is implemented and tested.
 
 ## Parent access tests
 
@@ -26,7 +26,7 @@ This is intentionally a safe starting point, not the completed guest wishlist ru
 
 | Test | Expected |
 |---|---|
-| Guest opens a valid share link | Only that curated list is readable |
+| Guest opens a valid share link | Anonymous sign-in, token-bound session, and only that curated list is readable |
 | Guest reads household-private data | Denied |
 | Guest enumerates or lists other share links | Denied |
 | Guest claims an item selected for that link | Allowed after name + confirmation |
@@ -35,7 +35,7 @@ This is intentionally a safe starting point, not the completed guest wishlist ru
 | Guest claims an already-claimed or unavailable item | Denied |
 | Two guests claim the same item concurrently | At most one succeeds |
 | Claim appears in every filtered view containing the item | Yes |
-| Guest reads parent-only claim history | Denied |
+| Guest reads parent-only claim history | Denied; parent can read the event |
 | Parent undoes claim | Allowed; item becomes available in every view |
 
 ## Release gate
@@ -44,3 +44,13 @@ This is intentionally a safe starting point, not the completed guest wishlist ru
 - Implement guest token reads and claims only after selecting a data path that can enforce both the per-link item filter and the single shared claim state.
 - Run all guest tests, including concurrent-claim behavior, against the Emulator Suite.
 - Do not deploy rules or connect production data while any required test fails.
+
+## Token-scoped implementation notes
+
+- Public share records live at `publicShares/{tokenHash}`; they contain no item descriptions, names, prices, or other wishlist details.
+- The raw random token belongs in the URL only. The client hashes it with SHA-256 and uses the hash as the public share document ID.
+- `guestSessions/{uid}` binds an anonymous Firebase Auth UID to one active token hash.
+- Guest clients read each selected item by document ID. Collection listing is denied to guests.
+- A guest claim is one Firestore batch: update only the canonical wishlist item's claim fields and create one `claims` history document. Rules use `getAfter()` to require both writes to agree.
+- A guest cannot undo a claim. Only an active household member can reset the item and write an undo history event.
+- Enable Firebase Anonymous Authentication in the Firebase console before enabling the guest UI. It is free under the Firebase Spark plan.
