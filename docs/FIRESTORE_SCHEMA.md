@@ -103,6 +103,7 @@ The member document ID is the Firebase Authentication UID.
   availability: "available", // available | claimed | unavailable
   claimedByName: null,       // self-reported guest-entered name
   claimedAt: null,           // Firestore Timestamp
+  claimEventId: null,        // current claim history event ID
   sortOrder: 100,
   createdAt: Timestamp,
   updatedAt: Timestamp
@@ -131,11 +132,12 @@ Guest clients read selected wishlist items individually by document ID; they can
 
 ## Claim history
 
-`claims/{claimId}` (parent-only)
+`claims/{claimId}` (parent-only; unique document ID per event)
 - `itemId`
 - `childId`
 - `enteredName` (self-reported)
 - `eventType`: `claimed` or `undone`
+- Guest claim event ID is copied to `wishlistItems/{itemId}.claimEventId`; each claim uses a new random document ID
 - `createdAt`: Firestore Timestamp
 - `shareLinkId` (optional internal reference when reliably known)
 
