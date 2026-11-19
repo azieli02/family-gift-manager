@@ -4,7 +4,7 @@ Run these tests in the Firebase Local Emulator Suite before deploying rules or e
 
 ## Current baseline
 
-`firestore.rules` currently permits authenticated active household members to access their household data. It denies all guest access and denies all access to paths not explicitly allowed. Membership documents cannot be changed from the client in this baseline.
+`firestore.rules` currently permits authenticated active household members to access their household data. Guest access is limited to token-scoped public share metadata and selected wishlist item documents. Guests cannot list wishlist items or read household-private data. Membership documents cannot be changed from the client in this baseline.
 
 Before testing guest links, enable **Authentication → Sign-in method → Anonymous** in the Firebase console. Guest wishlist access uses Firebase Anonymous Authentication. A guest session is bound to one unguessable token hash. The public share document exposes only its selected item IDs and household/child references; guests fetch selected wishlist documents individually, not by listing a household collection. Guest claim writes must atomically update the shared wishlist item and create a claim-history event. Do not deploy until the complete emulator suite passes and the client flow is implemented and tested.
 
@@ -22,7 +22,7 @@ Before testing guest links, enable **Authentication → Sign-in method → Anony
 | Member attempts to edit membership records | Denied |
 | Any user reads an unrecognized top-level path | Denied |
 
-## Guest access tests (to add with guest rules)
+## Guest access tests
 
 | Test | Expected |
 |---|---|
