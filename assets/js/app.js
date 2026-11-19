@@ -871,7 +871,7 @@ async function renderInventory(user, household, householdId) {
       }));
     }catch(error){list.innerHTML="";notice(friendlyError(error),"error");}
   }
-  function openAssignment(item){
+  async function openAssignment(item){
     const old=document.querySelector("#inventory-assignment");if(old)old.remove();
     const modal=document.createElement("section");modal.id="inventory-assignment";modal.className="gift-settings";
     modal.innerHTML=`<h2>Assign ${escapeHtml(item.item)}</h2><p class="section-copy">The purchase details will be copied to the selected gift list. The inventory record stays linked for reference and won't be counted separately in spending totals.</p>
@@ -884,7 +884,15 @@ async function renderInventory(user, household, householdId) {
       </form><p class="auth-message" id="assignment-message" hidden></p>`;
     list.before(modal);
     const assignForm=modal.querySelector("form"), typeSelect=assignForm.elements.targetType, targetSelect=assignForm.elements.targetId;
-    const [childrenSnap,recipientsSnap,catsSnap,statusSnap]=await Promise.all([getDocs(collection(db,"households",householdId,"children")),getDocs(collection(db,"households",householdId,"giftRecipients")),getDocs(collection(db,"households",householdId,"giftCategories")),getDocs(collection(db,"households",householdId,"giftStatuses"))]);
+    const categoryRef=collection(db,"households",householdId,"giftCategories");
+    const giftStatusRef=collection(db,"households",householdId,"giftStatuses");
+    const categoryDefaults=[["undecided","Undecided","#e8e5dc"],["santa","Santa","#dce8df"],["stocking","Stocking","#f5e3d5"],["main","Main","#dce5f2"],["advent","Advent","#eee2f1"]];
+    const giftStatusDefaults=[["need-to-buy","Need to buy","#f5e3d5"],["bought","Bought","#dce5f2"],["wrapped","Wrapped","#dce8df"]];
+    for(const [ref,entries] of [[categoryRef,categoryDefaults],[giftStatusRef,giftStatusDefaults]]){
+      const existing=await getDocs(ref);
+      if(existing.empty){const seed=writeBatch(db);entries.forEach((entry,index)=>seed.set(doc(ref,entry[0]),{label:entry[1],color:entry[2],sortOrder:(index+1)*100,active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));await seed.commit();}
+    }
+    const [childrenSnap,recipientsSnap,catsSnap,statusSnap]=await Promise.all([getDocs(collection(db,"households",householdId,"children")),getDocs(collection(db,"households",householdId,"giftRecipients")),getDocs(categoryRef),getDocs(giftStatusRef)]);
     const children=childrenSnap.docs.map(r=>({id:r.id,...r.data()})).filter(x=>x.active!==false);
     const recipients=recipientsSnap.docs.map(r=>({id:r.id,...r.data()})).filter(x=>x.active!==false);
     const categories=catsSnap.docs.map(r=>r.data()).filter(x=>x.active!==false);
