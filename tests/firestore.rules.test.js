@@ -139,3 +139,33 @@ test("a parent can manage inventory items and their configurable statuses", asyn
     label: "Available", color: "#dce8df", sortOrder: 100, active: true
   }));
 });
+
+test("a parent can manage gift-givers and master wishlist records in their household", async () => {
+  const db = await createHouseholdAs("parent-a", "household-a");
+  await assertSucceeds(setDoc(doc(db, "households", "household-a", "giftGivers", "giver-1"), {
+    name: "Aunt Casey", notes: "", active: true
+  }));
+  await assertSucceeds(setDoc(doc(db, "households", "household-a", "wishlistItems", "item-1"), {
+    childId: "child-1", item: "Book", availability: "available", sortOrder: 100
+  }));
+  await assertSucceeds(setDoc(doc(db, "households", "household-a", "wishlistCategories", "books"), {
+    label: "Books", sortOrder: 100, active: true
+  }));
+});
+
+test("a parent cannot access another household's gift-giver or wishlist records", async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, "households", "household-a"), {
+      name: "A", timezone: "America/Detroit", ownerUid: "parent-a", active: true
+    });
+    await setDoc(doc(db, "households", "household-a", "members", "parent-a"), {
+      role: "owner", active: true
+    });
+  });
+  const otherDb = testEnv.authenticatedContext("parent-b").firestore();
+  await assertFails(getDoc(doc(otherDb, "households", "household-a", "giftGivers", "giver-1")));
+  await assertFails(setDoc(doc(otherDb, "households", "household-a", "wishlistItems", "item-1"), {
+    item: "Unauthorized"
+  }));
+});
