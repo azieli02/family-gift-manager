@@ -851,7 +851,7 @@ async function renderInventory(user, household, householdId) {
         const savings=item.paidPriceCents!=null&&item.regularPriceCents!=null?Number(item.regularPriceCents)-Number(item.paidPriceCents):null;
         const linked=item.assignedGiftId?'<p class="gift-meta">Assigned to a gift list; purchase details were carried over.</p>':"";
         const canAssign=!item.assignedGiftId&&item.status!=="Given"&&item.status!=="Assigned";
-        return `<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status" style="background:${(statuses.find(s=>s.label===item.status)||{}).color||"#e8efe9"}">${escapeHtml(item.status||"")}</span></div>
+        return `<article class="gift-card" draggable="true" data-id="${escapeHtml(item.id)}"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status" style="background:${(statuses.find(s=>s.label===item.status)||{}).color||"#e8efe9"}">${escapeHtml(item.status||"")}</span></div>
           <p>${item.intendedUse?"Intended use: "+escapeHtml(item.intendedUse):"No intended use added"}${item.store?" · "+escapeHtml(item.store):""}</p>
           <div class="gift-prices"><span>Paid: ${item.paidPriceCents==null?"—":formatMoney(item.paidPriceCents)}</span><span>Regular: ${item.regularPriceCents==null?"—":formatMoney(item.regularPriceCents)}</span><span>Savings: ${savings==null?"—":formatMoney(savings)}</span></div>
           ${item.purchaseDate?'<p class="gift-meta">Purchased: '+escapeHtml(formatBirthday(item.purchaseDate))+'</p>':""}${item.notes?'<p class="gift-notes-text">'+escapeHtml(item.notes)+'</p>':""}${linked}
@@ -1021,7 +1021,7 @@ async function renderChildWishlist(user, household, householdId, child) {
     try{await addDoc(categoriesRef,{label,sortOrder:(categories.length+1)*100,active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});f.reset();categories=(await getDocs(query(categoriesRef,orderBy("sortOrder","asc")))).docs.map(r=>({id:r.id,...r.data()}));refreshCategorySelect();renderCategories();notice("Category added.","success");}
     catch(error){notice(friendlyError(error),"error");}
   });
-  function resetForm(){editingId=null;form.reset();refreshCategorySelect();save.textContent="Add item";cancel.hidden=true;}
+  function resetForm(){editingId=null;form.reset();form.elements.availability.querySelector("option[value='claimed']")?.remove();refreshCategorySelect();save.textContent="Add item";cancel.hidden=true;}
   cancel.addEventListener("click",resetForm);
   async function loadItems(){
     try{
@@ -1035,14 +1035,39 @@ async function renderChildWishlist(user, household, householdId, child) {
           <div class="gift-prices"><span>Price: ${item.priceCents==null?"—":formatMoney(item.priceCents)}</span><span>${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
           ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
           ${item.claimedByName?'<p class="gift-meta">Claimed by '+escapeHtml(item.claimedByName)+'</p>':""}
-          <div class="gift-card-actions"><button class="text-button edit-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Edit</button><button class="text-button delete-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Delete</button></div></article>`;
+          <div class="gift-card-actions"><button class="text-button move-wishlist-up" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item up">↑</button><button class="text-button move-wishlist-down" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item down">↓</button><button class="text-button edit-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Edit</button><button class="text-button delete-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Delete</button></div></article>`;
       }).join("");
       list.querySelectorAll(".edit-wishlist-item").forEach(button=>button.addEventListener("click",()=>{
         const item=items.find(x=>x.id===button.dataset.id);if(!item)return;editingId=item.id;
         form.elements.item.value=item.item||"";form.elements.description.value=item.description||"";form.elements.url.value=item.url||"";
         form.elements.price.value=item.priceCents==null?"":(item.priceCents/100).toFixed(2);
-        refreshCategorySelect(item.categoryId);form.elements.availability.value=item.availability==="unavailable"?"unavailable":"available";
+        refreshCategorySelect(item.categoryId);
+        const availability=form.elements.availability;
+        availability.querySelector("option[value='claimed']")?.remove();
+        if(item.availability==="claimed")availability.add(new Option("Claimed","claimed"));
+        availability.value=["available","unavailable","claimed"].includes(item.availability)?item.availability:"available";
         save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth",block:"start"});
+      }));
+      let draggedId=null;
+      list.querySelectorAll(".gift-card[draggable='true']").forEach(card=>{
+        card.addEventListener("dragstart",event=>{draggedId=card.dataset.id;event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",draggedId);});
+        card.addEventListener("dragover",event=>{event.preventDefault();event.dataTransfer.dropEffect="move";});
+        card.addEventListener("drop",async event=>{
+          event.preventDefault();const sourceId=draggedId||event.dataTransfer.getData("text/plain");draggedId=null;
+          if(!sourceId||sourceId===card.dataset.id)return;
+          const from=items.findIndex(x=>x.id===sourceId),to=items.findIndex(x=>x.id===card.dataset.id);if(from<0||to<0)return;
+          const reordered=[...items];const moved=reordered.splice(from,1)[0];reordered.splice(to,0,moved);
+          const batch=writeBatch(db);reordered.forEach((entry,i)=>batch.update(doc(itemsRef,entry.id),{sortOrder:(i+1)*100,updatedAt:serverTimestamp()}));
+          try{await batch.commit();await loadItems();}catch(error){notice(friendlyError(error),"error");}
+        });
+      });
+      list.querySelectorAll(".move-wishlist-up, .move-wishlist-down").forEach(button=>button.addEventListener("click",async()=>{
+        const index=items.findIndex(x=>x.id===button.dataset.id),delta=button.classList.contains("move-wishlist-up")?-1:1,target=index+delta;
+        if(index<0||target<0||target>=items.length)return;
+        const reordered=[...items];[reordered[index],reordered[target]]=[reordered[target],reordered[index]];
+        const batch=writeBatch(db);reordered.forEach((entry,i)=>batch.update(doc(itemsRef,entry.id),{sortOrder:(i+1)*100,updatedAt:serverTimestamp()}));
+        button.disabled=true;
+        try{await batch.commit();await loadItems();}catch(error){notice(friendlyError(error),"error");button.disabled=false;}
       }));
       list.querySelectorAll(".delete-wishlist-item").forEach(button=>button.addEventListener("click",async()=>{
         const item=items.find(x=>x.id===button.dataset.id);if(!item||!confirm('Delete "'+item.item+'"?'))return;
