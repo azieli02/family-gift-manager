@@ -9,7 +9,7 @@ This document turns the product requirements into concrete document shapes. It i
 - Money is stored as integer cents (for example, $12.99 = 1299).
 - Timestamps use Firestore Timestamp.
 - Date-only values use `YYYY-MM-DD`.
-- Sort order is a numeric `sortOrder`; lower numbers appear first.
+- Sort order is a numeric `sortOrder`; lower numbers appear first. Gift lists support drag-and-drop ordering and up/down controls that persist this value.
 - Soft-deactivate configurable records with `active: false` when historical records may reference them.
 
 ## Household root
