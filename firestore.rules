@@ -207,7 +207,126 @@ service cloud.firestore {
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 60
           && request.resource.data.displayName == request.resource.data.name
-          && (request.resource.data.birthday == null || request.resource.data.birthday is string)
+          && (request.resource.data.birthday == null || (request.resource.data.birthday is string && request.resource.data.birthday.matches('^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])
+          && request.resource.data.active is bool;
+        allow delete: if false;
+      }
+
+      // Explicitly enumerate other household collections so the member directory
+      // and child profiles do not inherit broad access from this rule.
+      match /wishlistItems/{itemId} {
+        allow get: if isHouseholdMember(householdId) || guestCanAccessItem(householdId, itemId);
+        allow list, create, delete: if isHouseholdMember(householdId);
+        allow update: if isHouseholdMember(householdId)
+          || (guestCanAccessItem(householdId, itemId)
+            && resource.data.availability == 'available'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'availability', 'claimedByName', 'claimedAt', 'claimEventId', 'updatedAt'
+            ])
+            && request.resource.data.availability == 'claimed'
+            && request.resource.data.claimEventId is string
+            && request.resource.data.claimEventId.size() > 0
+            && request.resource.data.claimedByName is string
+            && request.resource.data.claimedByName.size() > 0
+            && request.resource.data.claimedByName.size() <= 80
+            && request.resource.data.claimedAt is timestamp
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.itemId == itemId
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.enteredName == request.resource.data.claimedByName
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.shareTokenHash == get(guestSessionPath()).data.tokenHash);
+      }
+
+      match /claims/{claimId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isHouseholdMember(householdId)
+          || (signedIn()
+            && request.resource.data.keys().hasOnly([
+              'itemId', 'childId', 'enteredName', 'eventType', 'createdAt', 'shareTokenHash'
+            ])
+            && request.resource.data.eventType == 'claimed'
+            && request.resource.data.shareTokenHash == get(guestSessionPath()).data.tokenHash
+            && request.resource.data.enteredName is string
+            && request.resource.data.enteredName.size() > 0
+            && request.resource.data.enteredName.size() <= 80
+            && request.resource.data.createdAt is timestamp
+            && guestCanAccessItem(householdId, request.resource.data.itemId)
+            && get(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.availability == 'available'
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.availability == 'claimed'
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimedByName == request.resource.data.enteredName
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimEventId == claimId);
+        allow update, delete: if isHouseholdMember(householdId);
+      }
+
+      match /{collection}/{documentId} {
+        allow read, write: if isHouseholdMember(householdId)
+          && collection in [
+            'giftRecipients', 'giftGivers', 'giftGiverBudgets',
+            'gifts', 'inventory', 'inventoryStatuses', 'giftCategories', 'giftStatuses',
+            'wishlistCategories', 'shareLinks'
+          ];
+      }
+    }
+
+    function guestSessionPath() {
+      return /databases/$(database)/documents/guestSessions/$(request.auth.uid);
+    }
+
+    function guestCanAccessItem(householdId, itemId) {
+      return signedIn()
+        && exists(guestSessionPath())
+        && get(guestSessionPath()).data.tokenHash is string
+        && exists(/databases/$(database)/documents/publicShares/$(get(guestSessionPath()).data.tokenHash))
+        && get(/databases/$(database)/documents/publicShares/$(get(guestSessionPath()).data.tokenHash)).data.active == true
+        && get(/databases/$(database)/documents/publicShares/$(get(guestSessionPath()).data.tokenHash)).data.householdId == householdId
+        && get(/databases/$(database)/documents/publicShares/$(get(guestSessionPath()).data.tokenHash)).data.selectedItemIds.hasAny([itemId]);
+    }
+
+    match /guestSessions/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['tokenHash', 'createdAt'])
+        && request.resource.data.tokenHash is string
+        && exists(/databases/$(database)/documents/publicShares/$(request.resource.data.tokenHash))
+        && get(/databases/$(database)/documents/publicShares/$(request.resource.data.tokenHash)).data.active == true;
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt'])
+        && request.resource.data.tokenHash == resource.data.tokenHash;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /publicShares/{tokenHash} {
+      allow get: if (signedIn()
+          && exists(guestSessionPath())
+          && get(guestSessionPath()).data.tokenHash == tokenHash
+          && resource.data.active == true)
+        || (signedIn() && isHouseholdMember(resource.data.householdId));
+      allow list: if false;
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'householdId', 'childId', 'giftGiverId', 'shareLinkId',
+          'selectedItemIds', 'active', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.householdId is string
+        && isHouseholdMember(request.resource.data.householdId)
+        && request.resource.data.childId is string
+        && request.resource.data.giftGiverId is string
+        && request.resource.data.shareLinkId is string
+        && request.resource.data.selectedItemIds is list
+        && request.resource.data.active is bool
+        && getAfter(/databases/$(database)/documents/households/$(request.resource.data.householdId)/shareLinks/$(request.resource.data.shareLinkId)).data.childId == request.resource.data.childId
+        && getAfter(/databases/$(database)/documents/households/$(request.resource.data.householdId)/shareLinks/$(request.resource.data.shareLinkId)).data.giftGiverId == request.resource.data.giftGiverId
+        && getAfter(/databases/$(database)/documents/households/$(request.resource.data.householdId)/shareLinks/$(request.resource.data.shareLinkId)).data.selectedItemIds == request.resource.data.selectedItemIds;
+      allow delete: if signedIn() && isHouseholdMember(resource.data.householdId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+)))
           && request.resource.data.active is bool;
         allow delete: if false;
       }
