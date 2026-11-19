@@ -47,9 +47,10 @@ These workflows must remain separate, including when the same real-world person 
 - Each child has an individual persistent share link.
 - A gift-giver can receive a curated selection from the child's master list. The same item may appear on multiple gift-giver links.
 - Guest view has no account, login, email, or sharing metadata.
-- Guest "Got it!" claims an item. It remains visible but is clearly marked purchased/claimed.
+- Guest taps a claim button, enters their name, and confirms. The name is self-reported.
+- The item remains visible but is marked Claimed/grayed out, with the entered name and claim time available to parents.
 - A claim updates every shared view of that item to prevent duplicate purchases.
-- Parent-only records identify which share link made the claim. Guest views never reveal claimant identity.
+- Parent-only claim history records claim and undo events.
 - Parents can undo a claim or override availability.
 - Share URLs are unlisted bearer links with long random tokens. Anyone who receives a forwarded link may open it.
 
@@ -83,7 +84,7 @@ These workflows must remain separate, including when the same real-world person 
 5. Build parent household setup and membership.
 6. Build Our Gifts workflows.
 7. Build child wishlists and curated guest links.
-8. Implement safe, atomic guest claims and parent-only claim attribution.
+8. Implement name-confirmed guest claims, shared claim state, and parent-only claim history.
 9. Test household isolation and guest-link boundaries with multiple test households.
 10. Deploy through GitHub Pages.
 
