@@ -920,7 +920,7 @@ async function renderInventory(user, household, householdId) {
         else if(type==="recipient"){giftData.giftType="recipient";giftData.recipientId=targetId;giftData.childId=null;}
         else {giftData.giftType="household";giftData.childId=null;}
         const batch=writeBatch(db);batch.set(giftRef,giftData);
-        batch.update(doc(inventoryRef,item.id),{status:"Assigned",assignedGiftId:giftRef.id,assignedToType:type,assignedToId:targetId||null,updatedAt:serverTimestamp()});
+        batch.update(doc(inventoryRef,item.id),{status:(statuses.find(s=>s.id==="assigned")||{}).label||"Assigned",assignedGiftId:giftRef.id,assignedToType:type,assignedToId:targetId||null,updatedAt:serverTimestamp()});
         await batch.commit();modal.remove();resetForm();await loadInventory();notice("Gift assigned. Its purchase details were carried over.","success");
       }catch(error){const el=modal.querySelector("#assignment-message");el.textContent=friendlyError(error);el.dataset.kind="error";el.hidden=false;submit.disabled=false;}
     });
