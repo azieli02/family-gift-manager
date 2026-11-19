@@ -68,8 +68,9 @@ The member document ID is the Firebase Authentication UID.
 - Household-scope gifts use `giftType: "household"` and `childId: null`; they are excluded from child spending totals. Recipient-scope gifts use `giftType: "recipient"`, `recipientId`, and `childId: null`. Child Christmas gifts retain `childId` and no `giftType` marker.
 
 `inventory/{inventoryItemId}`
-- `item`, `store`, `paidPriceCents`, `regularPriceCents`, `purchaseDate`, `notes`, `intendedUse`, `status`, `assignedGiftId` (optional), timestamps.
-- Assignment should preserve the original purchase data. Implementation will decide whether the gift record references the inventory record or the inventory record is converted in place.
+- `item`, `store`, `paidPriceCents`, `regularPriceCents`, `purchaseDate`, `notes`, `intendedUse`, `status`, `assignedGiftId` (optional), `assignedToType`, `assignedToId`, timestamps.
+- Inventory statuses are configured separately in `inventoryStatuses/{statusId}` with `label`, `color`, `sortOrder`, `active`, and timestamps. Defaults: Available, Reserved, Assigned, Given.
+- Assigning an item creates a gift record in `gifts` with `inventoryItemId` and copies the purchase details, then updates the inventory record with `assignedGiftId` and assignment target. The inventory record remains as a linked reference; spending totals count the gift record, not the inventory collection, so the purchase is counted once.
 
 ## Configurable labels
 
