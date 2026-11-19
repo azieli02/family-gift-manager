@@ -214,7 +214,7 @@ async function renderHouseholdHome(user, household, householdId) {
       </div>
       <section class="children-section" aria-labelledby="children-heading">
         <h2 id="children-heading">Children</h2>
-        <p class="section-copy">Add each child once. You can update their details later.</p>
+        <p class="section-copy">Add each child once. You can archive a profile later without deleting its records.</p>
         <form id="child-form" class="child-form">
           <div class="field-group"><label for="child-name">Child's name</label>
             <input id="child-name" name="name" maxlength="60" autocomplete="off" placeholder="Name" required></div>
