@@ -467,8 +467,8 @@ async function renderChildGiftList(user, household, householdId, child) {
           ? Number(gift.regularPriceCents) - Number(gift.paidPriceCents) : null;
         return `
         <article class="gift-card" draggable="true" data-gift-id="${escapeHtml(gift.id)}">
-          <div class="gift-card-top"><h3>${escapeHtml(gift.item)}</h3><span class="gift-status">${escapeHtml(gift.status)}</span></div>
-          <p>${escapeHtml(gift.category)}${gift.store ? " · " + escapeHtml(gift.store) : ""}</p>
+          <div class="gift-card-top"><h3>${escapeHtml(gift.item)}</h3><span class="gift-status" style="background:${(giftStatuses.find(value => value.label === gift.status) || {}).color || "#e8efe9"}">${escapeHtml(gift.status)}</span></div>
+          <p><span class="gift-category-label" style="background:${(giftCategories.find(value => value.label === gift.category) || {}).color || "#eeeae2"}">${escapeHtml(gift.category)}</span>${gift.store ? " · " + escapeHtml(gift.store) : ""}</p>
           <div class="gift-prices">
             <span>Paid: ${gift.paidPriceCents == null ? "—" : formatMoney(gift.paidPriceCents)}</span>
             <span>Regular: ${gift.regularPriceCents == null ? "—" : formatMoney(gift.regularPriceCents)}</span>
