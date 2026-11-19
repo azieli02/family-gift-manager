@@ -77,3 +77,12 @@ h1{margin:0;font-size:clamp(2rem,6vw,3rem);line-height:1.06;letter-spacing:-.045
 .gift-card-actions .text-button{margin:0}
 .gift-meta{margin:8px 0 0;color:var(--muted);font-size:.82rem}
 @media(max-width:520px){.gift-form-actions{grid-column:auto}.gift-form-actions button{flex:1}.gift-card-actions{flex-wrap:wrap}}
+
+/* Gift list ordering */
+.gift-card{cursor:grab;transition:border-color .12s,box-shadow .12s}
+.gift-card:active{cursor:grabbing}
+.gift-card.is-dragging{opacity:.45}
+.gift-card.drop-target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.gift-card-order{display:inline-flex;gap:4px}
+.order-gift{width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:#fbfaf7;color:var(--ink);font:inherit;cursor:pointer}
+.order-gift:disabled{opacity:.3;cursor:default}
