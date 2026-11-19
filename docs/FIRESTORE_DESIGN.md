@@ -1,17 +1,19 @@
-# Firestore data model — proposed architecture
+# Firestore data model — working proposal
 
-This is the working logical model. It is not a set of collections to create manually yet. Security Rules and guest claim behavior must be tested in the Firebase Emulator Suite before production use.
+This model reflects the intended behavior: each child's wishlist is the master list; each gift-giver link is a filtered view of that list. An item exists once and has one shared claim state, even when several gift-givers see it.
+
+This is a logical design, not a set of collections to create manually. The guest claim authorization pattern must pass Firebase Emulator security-rule tests before production use.
 
 ## Design principles
 
 - Every private record belongs to exactly one household.
-- Parent access is determined by household membership, not by which screen the frontend displays.
-- Store money as integer cents, not floating-point currency.
-- Store timestamps as Firestore timestamps; store date-only values (such as birthdays) as normalized YYYY-MM-DD strings.
-- Keep guest-readable projections separate from private parent records.
-- Use high-entropy random share tokens. Treat links as bearer credentials: anyone who receives one can open it.
-- Firestore Security Rules are the security boundary. Frontend filtering is not security.
-- Keep the design compatible with the Firebase Spark plan; do not assume Cloud Functions.
+- Parent access is determined by active household membership.
+- Store money as integer cents.
+- Store timestamps as Firestore timestamps; store date-only values (such as birthdays) as YYYY-MM-DD strings.
+- Keep private parent metadata separate from guest-readable fields.
+- Use long, random, unlisted share tokens. Anyone who receives a link can open it.
+- Security Rules—not frontend filtering—must enforce household and guest access.
+- Stay compatible with Firebase Spark; do not assume Cloud Functions.
 
 ## 1. Household-private data
 
@@ -32,101 +34,104 @@ This is the working logical model. It is not a set of collections to create manu
 - children/{childId}
 - giftRecipients/{recipientId} — people this household buys gifts for
 - giftGivers/{giftGiverId} — people who may buy wishlist gifts
-- giftGiverBudgets/{budgetId} — keyed by gift-giver and child
-- gifts/{giftId} — child, household, or recipient gift records, with a scope/type field
-- inventory/{inventoryItemId} — unassigned gift inventory; assignment preserves original purchase data
+- giftGiverBudgets/{budgetId} — budget per gift-giver and child
+- gifts/{giftId} — child, household, or recipient gift records, distinguished by scope/type
+- inventory/{inventoryItemId} — unassigned gifts; assignment preserves original purchase data
 - giftCategories/{categoryId}
 - giftStatuses/{statusId}
 - wishlistCategories/{categoryId}
-- wishlistItems/{itemId}
-- shareLinks/{shareLinkId} — private parent-side configuration, recipient association, and token metadata
-- claims/{claimId} — parent-only claim history and attribution
+- wishlistItems/{itemId} — one master record per child's wishlist item
+- shareLinks/{shareLinkId} — private link configuration, gift-giver association, and selected item IDs
+- claims/{claimId} — private claim history and attribution
 
-All documents in these paths are readable/writable only by active members of the owning household, with role restrictions where appropriate.
+A master wishlist item contains the guest-display fields (name, description, URL, price, category, availability and sort order) plus parent-only fields as needed. The guest must never receive parent-only fields.
 
-## 2. Guest wishlist access
+## 2. Filtered gift-giver views
 
-Use a separate public projection rather than granting guests access to household collections.
+A share link is a filtered report of the child's master wishlist, not a second wishlist.
 
-### publicWishlists/{shareToken}
-Minimal guest-facing header:
-- childDisplayName (or parent-selected nickname)
+### households/{householdId}/shareLinks/{shareLinkId}
+Private parent-side configuration:
+- childId
+- giftGiverId
 - active
-- presentation settings that are safe to expose
+- selectedItemIds (or a normalized selection subcollection)
+- tokenHash / secure token lookup metadata
+- createdAt
 
-### publicWishlists/{shareToken}/items/{shareItemId}
-Only fields needed to render that curated link:
-- itemDisplayName
-- description (optional)
-- productUrl (optional)
-- price (optional)
-- categoryLabel
-- sortOrder
-- claimKey — opaque random key for the underlying master wishlist item
+Each gift-giver gets one persistent link per child. Changing the selected items changes the report, not the URL. The same master item can be selected for multiple gift-givers.
 
-Do not include household IDs, parent UIDs, budgets, gift-giver names, private notes, purchase history, or claim attribution.
+The raw bearer token should not be stored in a broadly readable household document. Resolve it through a narrowly scoped public token document or equivalent secure lookup.
 
-The token is a long random URL-safe value, not a sequential ID. Firestore rules must allow exact document reads for a valid link but deny collection listing and all access to household-private paths. Do not treat an unlisted URL as a substitute for restrictive rules.
+## 3. Guest-readable projection
 
-## 3. One shared claim state per master wishlist item
+Guests must not be granted read access to household collections. Use a public-facing projection that exposes only:
+- child's display name or chosen nickname
+- selected item name, description, product URL, price, category and sort order
+- shared claim state
 
-### publicClaimStates/{claimKey}
-Minimal shared state:
-- state: available | claimed | unavailable
-- claimSourceId: opaque ID for the share link used to claim (only if claimed)
-- claimedAt
-- updatedAt
+The projection is a read facade for the master records, not an independently editable wishlist. Parent changes to the master item or link selection must update what the guest sees.
 
-Every curated guest projection for the same master wishlist item carries the same claimKey. All guest views read the same publicClaimStates document. Therefore a claim made from one link appears as claimed on every other link that contains that item.
+A likely structure is a token-addressed public link document with selected item references, plus a single canonical guest-safe state/projection per master item. The exact paths and rules are not finalized until the access tests pass. This avoids exposing household IDs, parent UIDs, budgets, private notes, gift-giver directories, purchase records, or claim attribution.
 
-The claim state must not contain a person's name, email, or other claimant identity. claimSourceId is an opaque internal ID; only parents can resolve it to a gift-giver/share link in their household-private data.
+## 4. Shared claim state
 
-### Claim operation
+Each master wishlist item has exactly one claim state, shared by every filtered view that includes it:
+- available
+- claimed
+- unavailable (for example, no longer wanted)
 
-- A guest uses the share token to load only that share's public projection.
-- The client submits a Firestore transaction that reads the claim state and changes available to claimed.
-- The transaction also supplies the opaque claimSourceId associated with the current share.
-- Security Rules validate that the claimSourceId is authorized for that claimKey, that the current state is available, and that only the allowed state fields change.
-- Firestore transactions are atomic and retry when concurrent writes conflict. If another guest claims first, the second claim must fail rather than overwrite it.
-- Parent claim history is maintained separately and remains private. The precise transaction/rules mechanism for recording that history must be validated in the emulator before implementation; do not expose claimant identity in the public state.
+A claim changes the state of the underlying master item. Every gift-giver's filtered view reflects that state because they all reference the same item/state.
 
-A parent can reverse a claim through an authenticated, household-authorized operation. The public claim state then returns to available (or to the appropriate parent-selected state), updating every guest view.
+The public-facing state must not contain a person's name, email, or other claimant identity.
 
-## 4. Parent-only claim attribution
+### Claim attribution
 
-Private household claim records map claimSourceId to the relevant share link/gift-giver and record the claim event. Guests must not be able to read these records.
+The parent needs to know which gift-giver link was used. Keep that attribution in a separate parent-only claim record, mapping an opaque share-link identifier to the claim event. Never expose that mapping to guests.
 
-The public state may reveal only an opaque claimSourceId, never its human-readable mapping. If emulator testing shows that this still exposes more metadata than desired, use a stricter receipt design before launch.
+### Race safety
 
-## 5. Security and testing requirements
+The claim operation must be atomic:
+1. Confirm the item is currently available.
+2. Confirm the requesting share link is entitled to show that item.
+3. Change the one shared claim state to claimed.
+4. Record private attribution to the share link.
 
-Before connecting real app screens or creating production data, write and test rules for:
+Two simultaneous guests must not both succeed. A Firestore transaction or atomic batch plus restrictive Security Rules may be viable on Spark, but rules must prove both link authorization and the private attribution write. Firestore rules cannot run arbitrary server logic or safely infer a caller's link merely because the frontend says so.
 
-1. A parent in Household A cannot read or write any document belonging to Household B.
-2. A guest with Share Link A can read only the public projection for Link A and its referenced claim states.
-3. A guest cannot list all share links, enumerate tokens, or read household-private data.
-4. A guest cannot edit wishlist text, prices, categories, order, or another household record.
-5. A guest cannot claim an item that is already claimed or unavailable.
-6. Two simultaneous claim attempts cannot both succeed.
-7. A claim updates the shared state seen by every curated link containing that item.
-8. Guest reads never reveal gift-giver identity or parent-only claim history.
-9. A parent can undo a claim and the change appears across all guest views.
+**Important unresolved implementation detail:** Security Rules need a verifiable way to connect a guest's token-scoped claim request to the canonical item update and private attribution record in one atomic operation, without putting the secret token or claimant identity into public data. We must validate this in the Emulator Suite before choosing the exact document paths. If the no-Cloud-Functions approach cannot meet that bar, we should discuss the tradeoff rather than weaken the rules.
 
-Use the Firebase Local Emulator Suite and automated rules tests before deploying rules. Start from deny-all rules; never use open read/write rules in a deployed app.
+## 5. Required security tests
+
+Before using real family data, test:
+
+1. Parent in Household A cannot read or write Household B.
+2. Guest with Link A can read only Link A's selected items.
+3. Guest cannot list/enumerate other links or read household-private data.
+4. Guest cannot edit item names, descriptions, URLs, prices, categories, or sort order.
+5. Guest cannot claim an item not selected for their link.
+6. Guest cannot claim an already-claimed or unavailable item.
+7. Two simultaneous claims cannot both succeed.
+8. A claim is reflected in every filtered view containing that master item.
+9. Guest reads never reveal gift-giver identity or private claim history.
+10. Parent can undo a claim and all filtered views reflect the change.
+
+Use Firebase Local Emulator Suite and automated rules tests. Start with deny-all rules; never deploy open read/write rules.
 
 ## 6. Other data decisions
 
-- Gift recipients and gift-givers remain separate directories, even if the same person appears in both.
+- Gift recipients and gift-givers are separate directories, even if the same person appears in both.
 - Gift categories and purchase statuses are separate configurable records.
-- Wishlist category and availability status are separate fields.
-- Drag-and-drop sort order is stored explicitly; no priority field.
-- Inventory assignment must preserve the original purchase data and avoid duplicate entry. The exact representation (linked gift record versus transfer of the inventory record) can be decided when that workflow is implemented.
+- Wishlist categories and availability status are separate fields.
+- Drag-and-drop sort order is explicit; no priority field.
+- Inventory assignment preserves purchase data and avoids duplicate gift entry. Decide linked-record versus record-transfer behavior when implementing that workflow.
 
-## 7. Still to decide
+## 7. Still to define
 
-1. Exact document fields for each gift and wishlist record.
-2. Whether parent claim history is recorded by an additional client-side write in the same transaction or a receipt document validated by Security Rules.
-3. Exact owner invitation/deactivation workflow.
-4. Whether multiple parent accounts per household need distinct roles beyond owner and parent.
+- Exact fields for gift, inventory, child, recipient, gift-giver, and wishlist documents.
+- The secure guest token lookup and token-scoped read pattern.
+- The Spark-compatible atomic claim plus private attribution pattern.
+- Household invitation, membership, and deactivation workflow.
+- Whether owner and parent roles need different permissions in the first release.
 
-No collections or security rules should be created from this draft until the guest claim and attribution tests pass.
+Do not create production collections or deploy rules from this proposal until the guest access and claim tests pass.
