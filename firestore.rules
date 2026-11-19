@@ -101,7 +101,11 @@ service cloud.firestore {
             && request.resource.data.claimedByName.size() <= 80
             && request.resource.data.claimedAt is timestamp
             && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.itemId == itemId
-            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.enteredName == request.resource.      match /claims/{claimId} {
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.enteredName == request.resource.data.claimedByName
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.shareTokenHash == get(guestSessionPath()).data.tokenHash);
+      }
+
+      match /claims/{claimId} {
         allow read: if isHouseholdMember(householdId);
         allow create: if isHouseholdMember(householdId)
           || (signedIn()
@@ -119,9 +123,6 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.availability == 'claimed'
             && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimedByName == request.resource.data.enteredName
             && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimEventId == claimId);
-        allow update, delete: if isHouseholdMember(householdId);
-      }
-base)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimedByName == request.resource.data.enteredName);
         allow update, delete: if isHouseholdMember(householdId);
       }
 
