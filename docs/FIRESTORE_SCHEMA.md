@@ -60,7 +60,8 @@ The member document ID is the Firebase Authentication UID.
 ## Our Gifts
 
 `households/{householdId}/gifts/{giftId}`
-- Current child Christmas-list prototype fields: `childId`, `item`, `category` (initially Undecided, Santa, Stocking, Main, Advent), `status` (initially Need to buy, Bought, Wrapped), `paidPriceCents`, `regularPriceCents`, `store`, `notes`, `sortOrder`, `createdAt`, `updatedAt`.
+- Current child Christmas-list prototype fields: `childId`, `item`, `category` (initially Undecided, Santa, Stocking, Main, Advent), `status` (initially Need to buy, Bought, Wrapped), `paidPriceCents`, `regularPriceCents`, `store`, `purchaseDate` (optional `YYYY-MM-DD` date string or null), `notes`, `sortOrder`, `createdAt`, `updatedAt`.
+- Parents can edit gift details and change status. Savings is displayed as regular price minus paid price when both values exist. The child dashboard sums paid prices for each child; gifts without a paid price are excluded.
 - Prices are stored as integer cents. Savings is calculated as regular price minus paid price; do not store an editable savings value.
 - Planned expansion adds `scope` (child, household, recipient), recipient references, configurable category/status document IDs, and purchase date.
 
