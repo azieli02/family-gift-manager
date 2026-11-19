@@ -1147,7 +1147,7 @@ async function renderChildWishlist(user, household, householdId, child) {
       if(!items.length){list.innerHTML='<p class="empty-state">No wishlist items yet.</p>';return;}
       list.innerHTML=items.map(item=>{
         const category=categories.find(x=>x.id===item.categoryId);
-        return `<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status">${escapeHtml(category?.label||item.categoryLabel||"Uncategorized")}</span></div>
+        return `<article class="gift-card" draggable="true" data-id="${escapeHtml(item.id)}"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status">${escapeHtml(category?.label||item.categoryLabel||"Uncategorized")}</span></div>
           ${item.description?'<p>'+escapeHtml(item.description)+'</p>':""}
           <div class="gift-prices"><span>Price: ${item.priceCents==null?"—":formatMoney(item.priceCents)}</span><span>${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
           ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
