@@ -1090,9 +1090,21 @@ async function renderGiftGiverSelections(user, household, householdId, giver) {
         if(prior)prior.remove();
         if(token){
           const link=document.createElement("div");link.className="auth-message";link.id="share-url-"+child.id;
-          link.innerHTML='<strong>Share link</strong><p><input readonly value="'+escapeHtml(shareUrl(token))+'" aria-label="Share link URL"></p><button class="secondary-button copy-share-link" type="button">Copy link</button>';
+          link.innerHTML='<strong>Share link</strong><p><input readonly value="'+escapeHtml(shareUrl(token))+'" aria-label="Share link URL"></p><div class="gift-card-actions"><button class="secondary-button copy-share-link" type="button">Copy link</button><button class="text-button revoke-share-link" type="button">Revoke link</button></div>';
           target.querySelector('[data-child-id="'+CSS.escape(child.id)+'"]').closest(".gift-card").appendChild(link);
           link.querySelector(".copy-share-link").addEventListener("click",async()=>{await navigator.clipboard.writeText(shareUrl(token));notice("Link copied.","success");});
+          link.querySelector(".revoke-share-link").addEventListener("click",async()=>{
+            if(!confirm("Revoke this wishlist link? Anyone using it will lose access."))return;
+            const revokeBatch=writeBatch(db);
+            revokeBatch.update(linkRef,{active:false,updatedAt:serverTimestamp()});
+            revokeBatch.update(doc(db,"publicShares",tokenHash),{active:false,updatedAt:serverTimestamp()});
+            try{
+              await revokeBatch.commit();
+              localStorage.removeItem("fgm-share-token:"+linkId);
+              link.remove();
+              notice("Wishlist link revoked. Save a selection later to create a new link.","success");
+            }catch(error){notice(friendlyError(error),"error");}
+          });
         }
         notice("Wishlist selection saved.","success");
       }catch(error){notice(friendlyError(error),"error");button.disabled=false;}
