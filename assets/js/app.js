@@ -29,6 +29,12 @@ const firebaseApp = initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 
+// Guest wishlist links use an isolated Firebase app/auth instance so opening a
+// shared link in the same browser cannot replace a parent's signed-in session.
+const guestFirebaseApp = initializeApp(firebaseConfig, "guest-session");
+const guestAuth = getAuth(guestFirebaseApp);
+const guestDb = getFirestore(guestFirebaseApp);
+
 const status = document.querySelector("#connection-status");
 const appRoot = document.querySelector("#app");
 
@@ -1261,14 +1267,14 @@ async function renderGuestWishlist(user, token) {
   appRoot.innerHTML='<section class="auth-panel"><p class="eyebrow">Shared wishlist</p><h1>Loading wishlist…</h1><p class="welcome-copy">Checking this private link.</p></section>';
   try {
     const tokenHash=await sha256Hex(token);
-    const sessionRef=doc(db,"guestSessions",user.uid);
+    const sessionRef=doc(guestDb,"guestSessions",user.uid);
     const session=await getDoc(sessionRef);
     if(session.exists()&&session.data().tokenHash!==tokenHash)await deleteDoc(sessionRef);
     if(!session.exists()||session.data().tokenHash!==tokenHash)await setDoc(sessionRef,{tokenHash,createdAt:serverTimestamp()});
-    const shareSnap=await getDoc(doc(db,"publicShares",tokenHash));
+    const shareSnap=await getDoc(doc(guestDb,"publicShares",tokenHash));
     if(!shareSnap.exists()||shareSnap.data().active!==true)throw new Error("This wishlist link is no longer active.");
     const share=shareSnap.data();
-    const itemRefs=share.selectedItemIds.map(id=>doc(db,"households",share.householdId,"wishlistItems",id));
+    const itemRefs=share.selectedItemIds.map(id=>doc(guestDb,"households",share.householdId,"wishlistItems",id));
     const itemSnaps=await Promise.all(itemRefs.map(ref=>getDoc(ref)));
     const items=itemSnaps.filter(s=>s.exists()).map(s=>({id:s.id,...s.data()}));
     appRoot.innerHTML=`<section class="dashboard-panel"><p class="eyebrow">Shared wishlist</p><h1>Wishlist</h1><p class="welcome-copy">Choose an item if you'd like to get it. Claimed items remain visible so everyone can avoid duplicates.</p><div class="gift-list" id="guest-items"></div><p class="auth-message" id="guest-message" role="status" aria-live="polite" hidden></p></section>`;
@@ -1287,11 +1293,11 @@ async function renderGuestWishlist(user, token) {
       if(!name)return;
       const button=form.querySelector("button");button.disabled=true;
       try{
-        const batch=writeBatch(db);
-        batch.update(doc(db,"households",share.householdId,"wishlistItems",itemId),{
+        const batch=writeBatch(guestDb);
+        batch.update(doc(guestDb,"households",share.householdId,"wishlistItems",itemId),{
           availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
         });
-        batch.set(doc(db,"households",share.householdId,"claims",itemId),{
+        batch.set(doc(guestDb,"households",share.householdId,"claims",itemId),{
           itemId,childId:share.childId,enteredName:name,eventType:"claimed",
           createdAt:serverTimestamp(),shareTokenHash:tokenHash
         });
@@ -1307,10 +1313,10 @@ async function renderGuestWishlist(user, token) {
 
 const shareToken=new URLSearchParams(window.location.search).get("share");
 if(shareToken){
-  signInAnonymously(auth).catch(error=>{
+  signInAnonymously(guestAuth).catch(error=>{
     appRoot.innerHTML='<section class="auth-panel"><h1>Unable to open wishlist</h1><p class="welcome-copy">'+escapeHtml(friendlyError(error))+'</p></section>';
   });
-  onAuthStateChanged(auth,user=>{if(user)renderGuestWishlist(user,shareToken);});
+  onAuthStateChanged(guestAuth,user=>{if(user)renderGuestWishlist(user,shareToken);});
 } else {
   onAuthStateChanged(auth, user => {
     if (user) renderSignedIn(user);
