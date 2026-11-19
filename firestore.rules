@@ -88,7 +88,7 @@ service cloud.firestore {
         allow read, write: if isHouseholdMember(householdId)
           && collection in [
             'giftRecipients', 'giftGivers', 'giftGiverBudgets',
-            'gifts', 'inventory', 'giftCategories', 'giftStatuses',
+            'gifts', 'inventory', 'inventoryStatuses', 'giftCategories', 'giftStatuses',
             'wishlistCategories', 'wishlistItems', 'shareLinks', 'claims'
           ];
       }
