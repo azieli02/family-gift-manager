@@ -109,7 +109,7 @@ test("a parent can create a valid child profile in their household", async () =>
   await assertSucceeds(setDoc(doc(db, "households", "household-a", "children", "child-1"), {
     name: "Casey",
     displayName: "Casey",
-    birthday: "2018-04-12",
+    birthday: "04-12",
     active: true,
     sortOrder: 0,
     createdAt: serverTimestamp(),
