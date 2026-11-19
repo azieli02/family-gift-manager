@@ -1255,7 +1255,63 @@ function formatBirthday(value) {
   return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
 }
 
-onAuthStateChanged(auth, user => {
-  if (user) renderSignedIn(user);
-  else renderSignedOut();
-});
+async function renderGuestWishlist(user, token) {
+  appRoot.innerHTML='<section class="auth-panel"><p class="eyebrow">Shared wishlist</p><h1>Loading wishlist…</h1><p class="welcome-copy">Checking this private link.</p></section>';
+  try {
+    const tokenHash=await sha256Hex(token);
+    const sessionRef=doc(db,"guestSessions",user.uid);
+    const session=await getDoc(sessionRef);
+    if(session.exists()&&session.data().tokenHash!==tokenHash)await deleteDoc(sessionRef);
+    if(!session.exists()||session.data().tokenHash!==tokenHash)await setDoc(sessionRef,{tokenHash,createdAt:serverTimestamp()});
+    const shareSnap=await getDoc(doc(db,"publicShares",tokenHash));
+    if(!shareSnap.exists()||shareSnap.data().active!==true)throw new Error("This wishlist link is no longer active.");
+    const share=shareSnap.data();
+    const itemRefs=share.selectedItemIds.map(id=>doc(db,"households",share.householdId,"wishlistItems",id));
+    const itemSnaps=await Promise.all(itemRefs.map(ref=>getDoc(ref)));
+    const items=itemSnaps.filter(s=>s.exists()).map(s=>({id:s.id,...s.data()}));
+    appRoot.innerHTML=`<section class="dashboard-panel"><p class="eyebrow">Shared wishlist</p><h1>Wishlist</h1><p class="welcome-copy">Choose an item if you'd like to get it. Claimed items remain visible so everyone can avoid duplicates.</p><div class="gift-list" id="guest-items"></div><p class="auth-message" id="guest-message" role="status" aria-live="polite" hidden></p></section>`;
+    const list=document.querySelector("#guest-items"),message=document.querySelector("#guest-message");
+    if(!items.length){list.innerHTML='<p class="empty-state">There are no items in this shared wishlist.</p>';return;}
+    list.innerHTML=items.map(item=>`<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status">${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
+      ${item.description?'<p>'+escapeHtml(item.description)+'</p>':""}
+      <div class="gift-prices"><span>${item.priceCents==null?"":formatMoney(item.priceCents)}</span></div>
+      ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
+      ${item.claimedByName?'<p class="gift-meta">Claimed by '+escapeHtml(item.claimedByName)+'</p>':""}
+      ${item.availability==="available"?'<form class="guest-claim-form" data-item-id="'+escapeHtml(item.id)+'"><label>Your name <input name="name" maxlength="80" required></label><button class="primary-button" type="submit">Claim this item</button></form>':""}
+    </article>`).join("");
+    list.querySelectorAll(".guest-claim-form").forEach(form=>form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      const name=form.elements.name.value.trim(),itemId=form.dataset.itemId;
+      if(!name)return;
+      const button=form.querySelector("button");button.disabled=true;
+      try{
+        const batch=writeBatch(db);
+        batch.update(doc(db,"households",share.householdId,"wishlistItems",itemId),{
+          availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
+        });
+        batch.set(doc(db,"households",share.householdId,"claims",itemId),{
+          itemId,childId:share.childId,enteredName:name,eventType:"claimed",
+          createdAt:serverTimestamp(),shareTokenHash:tokenHash
+        });
+        await batch.commit();
+        message.textContent="Thanks! This item is now marked as claimed.";message.dataset.kind="success";message.hidden=false;
+        await renderGuestWishlist(user,token);
+      }catch(error){message.textContent=error.code==="permission-denied"?"Someone may have claimed this item already. Refresh the list and try another.":friendlyError(error);message.dataset.kind="error";message.hidden=false;button.disabled=false;}
+    }));
+  } catch(error) {
+    appRoot.innerHTML='<section class="auth-panel"><p class="eyebrow">Shared wishlist</p><h1>Unable to open wishlist</h1><p class="welcome-copy">'+escapeHtml(friendlyError(error))+'</p></section>';
+  }
+}
+
+const shareToken=new URLSearchParams(window.location.search).get("share");
+if(shareToken){
+  signInAnonymously(auth).catch(error=>{
+    appRoot.innerHTML='<section class="auth-panel"><h1>Unable to open wishlist</h1><p class="welcome-copy">'+escapeHtml(friendlyError(error))+'</p></section>';
+  });
+  onAuthStateChanged(auth,user=>{if(user)renderGuestWishlist(user,shareToken);});
+} else {
+  onAuthStateChanged(auth, user => {
+    if (user) renderSignedIn(user);
+    else renderSignedOut();
+  });
+}
