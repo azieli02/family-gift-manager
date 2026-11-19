@@ -75,12 +75,19 @@ These workflows must remain separate, including when the same real-world person 
 - Use Eastern Time (America/Detroit) for user-facing local dates/times where needed.
 - Do not add Cloud Functions, paid services, or billing without discussing the tradeoff first.
 
+## Firestore implementation notes
+
+- Initial document shapes: [Firestore schema](FIRESTORE_SCHEMA.md).
+- Initial rules baseline: `firestore.rules` allows active authenticated household members and denies guest access by default.
+- Security test matrix: [Security test plan](SECURITY_TEST_PLAN.md).
+- Guest access is not ready to deploy. The token-scoped filtered read plus shared claim workflow must be implemented and emulator-tested before guest links are enabled.
+
 ## Roadmap
 
 1. Confirm product requirements and Firestore model.
 2. Scaffold the static frontend.
 3. Configure Firebase web app connection and Authentication.
-4. Implement and test Firestore Security Rules before storing real data.
+4. Run emulator tests for the fail-closed parent rules baseline; then implement and test guest-link rules before storing real data.
 5. Build parent household setup and membership.
 6. Build Our Gifts workflows.
 7. Build child wishlists and curated guest links.
