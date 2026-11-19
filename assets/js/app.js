@@ -1064,7 +1064,7 @@ async function renderGiftGiverSelections(user, household, householdId, giver) {
     editor.innerHTML=`<h2>${escapeHtml(child.name)} — selected items</h2><p class="section-copy">Check the items ${escapeHtml(giver.name)} may view. Claimed items remain in the selection so their shared status stays visible.</p><div class="settings-list" id="selection-items"></div><div class="gift-form-actions"><button class="primary-button" id="save-selection" type="button">Save selection</button><button class="secondary-button" id="cancel-selection" type="button">Cancel</button></div>`;
     target.appendChild(editor);
     const itemList=editor.querySelector("#selection-items");
-    if(!items.length)itemList.innerHTML='<p class="empty-state">This child's wishlist has no shareable items yet.</p>';
+    if(!items.length)itemList.innerHTML="<p class=\"empty-state\">This child's wishlist has no shareable items yet.</p>";
     else itemList.innerHTML=items.map(item=>`<label class="settings-row"><input type="checkbox" value="${escapeHtml(item.id)}" ${selected.has(item.id)?"checked":""}><span>${escapeHtml(item.item)}</span><span class="gift-meta">${escapeHtml(item.availability==="claimed"?"Claimed":item.categoryLabel||"")}</span></label>`).join("");
     editor.querySelector("#cancel-selection").addEventListener("click",()=>editor.remove());
     editor.querySelector("#save-selection").addEventListener("click",async()=>{
