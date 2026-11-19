@@ -417,8 +417,6 @@ async function renderChildGiftList(user, household, householdId, child) {
     if (!item) return;
     save.disabled = true; save.textContent = "Adding…";
     try {
-      const existing = await getDocs(collection(db, "households", householdId, "gifts"));
-      const count = existing.docs.filter(row => row.data().childId === child.id).length;
       const paid = form.elements.paidPrice.value;
       const regular = form.elements.regularPrice.value;
       const giftData = {
