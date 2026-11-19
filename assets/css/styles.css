@@ -42,3 +42,13 @@ h1{margin:0;font-size:clamp(2rem,6vw,3rem);line-height:1.06;letter-spacing:-.045
 .child-card h3{margin:0;font-size:1rem}.child-card p{margin:5px 0 0;color:var(--muted);font-size:.86rem}
 .child-card .text-button{margin:0;flex:none}.empty-state{margin:0;padding:18px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:.9rem;text-align:center}
 @media(max-width:620px){.dashboard-heading{display:block}.sign-out-button{margin:0 0 22px}.child-form{grid-template-columns:1fr}.child-form .primary-button{width:100%;margin-top:4px}.dashboard-panel{margin:24px auto}}
+
+.child-card{flex-wrap:wrap}.child-card-main{min-width:0;flex:1}
+.child-card-actions{display:flex;align-items:center;gap:14px;flex:none}
+.child-card-actions .text-button{margin:0}
+.child-edit-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;padding-top:14px;border-top:1px solid var(--line)}
+.child-edit-form[hidden]{display:none}
+.child-edit-form .field-group input{width:100%}
+.child-edit-actions{grid-column:1/-1;display:flex;gap:10px;align-items:center}
+.child-edit-actions .primary-button,.child-edit-actions .secondary-button{width:auto;margin:0}
+@media(max-width:520px){.child-edit-form{grid-template-columns:1fr}.child-edit-actions{grid-column:auto}.child-edit-actions button{flex:1}}
