@@ -230,7 +230,7 @@ async function renderHouseholdHome(user, household, householdId) {
           <div class="field-group"><label for="child-name">Child's name</label>
             <input id="child-name" name="name" maxlength="60" autocomplete="off" placeholder="Name" required></div>
           <div class="field-group"><label for="child-birthday">Birthday <span class="optional-label">(optional)</span></label>
-            <input id="child-birthday" name="birthday" type="date"></div>
+            <input id="child-birthday" name="birthday" type="text" inputmode="numeric" maxlength="5" placeholder="MM/DD"></div>
           <button class="primary-button" id="add-child" type="submit">Add child</button>
         </form>
         <p id="children-message" class="auth-message" role="status" aria-live="polite" hidden></p>
@@ -279,7 +279,7 @@ async function renderHouseholdHome(user, household, householdId) {
         </div>
         <form class="child-edit-form" data-child-id="${escapeHtml(child.id)}" hidden>
           <div class="field-group"><label>Name</label><input name="name" maxlength="60" value="${escapeHtml(child.name || "")}" required></div>
-          <div class="field-group"><label>Birthday (optional)</label><input name="birthday" type="date" value="${escapeHtml(child.birthday || "")}"></div>
+          <div class="field-group"><label>Birthday (optional)</label><input name="birthday" type="text" inputmode="numeric" maxlength="5" placeholder="MM/DD" value="${escapeHtml(formatBirthdayInput(child.birthday))}"></div>
           <div class="child-edit-actions"><button class="primary-button" type="submit">Save changes</button><button class="secondary-button cancel-edit" type="button">Cancel</button></div>
         </form></article>`).join("");
       childList.querySelectorAll(".open-gifts").forEach(button => button.addEventListener("click", () => {
@@ -300,7 +300,7 @@ async function renderHouseholdHome(user, household, householdId) {
           event.preventDefault();
           const child = children.find(item => item.id === form.dataset.childId);
           const name = form.elements.name.value.trim();
-          const birthday = form.elements.birthday.value;
+          const birthday = parseBirthday(form.elements.birthday.value);
           if (!child || !name) return;
           const save = form.querySelector('button[type="submit"]');
           save.disabled = true; save.textContent = "Saving…";
@@ -330,7 +330,7 @@ async function renderHouseholdHome(user, household, householdId) {
   childForm.addEventListener("submit", async event => {
     event.preventDefault();
     const name = childForm.elements.name.value.trim();
-    const birthday = childForm.elements.birthday.value;
+    const birthday = parseBirthday(childForm.elements.birthday.value);
     if (!name) return;
     addButton.disabled = true; addButton.textContent = "Adding…";
     try {
@@ -421,7 +421,7 @@ async function renderHouseholdGifts(user, household, householdId) {
 async function renderGiftRecipients(user, household, householdId) {
   const recipientsRef=collection(db,"households",householdId,"giftRecipients");
   const giftsRef=collection(db,"households",householdId,"gifts");
-  appRoot.innerHTML='<section class="dashboard-panel"><button class="text-button" id="back-home" type="button">← Household</button><p class="eyebrow">Our Gifts</p><h1>Gifts for other people</h1><p class="welcome-copy">Track recipients, birthdays, budgets, and gifts bought for them.</p><form id="recipient-form" class="gift-form"><div class="field-group"><label>Name</label><input name="name" maxlength="80" required></div><div class="field-group"><label>Birthday</label><input name="birthday" type="date"></div><div class="field-group"><label>Budget ($)</label><input name="budget" type="number" min="0" step="0.01"></div><div class="field-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div><div class="gift-form-actions"><button class="primary-button" id="save-recipient" type="submit">Add recipient</button><button class="secondary-button" id="cancel-recipient" type="button" hidden>Cancel edit</button></div></form><p id="recipient-message" class="auth-message" role="status" hidden></p><div id="recipient-list" class="gift-list"></div></section>';
+  appRoot.innerHTML='<section class="dashboard-panel"><button class="text-button" id="back-home" type="button">← Household</button><p class="eyebrow">Our Gifts</p><h1>Gifts for other people</h1><p class="welcome-copy">Track recipients, birthdays, budgets, and gifts bought for them.</p><form id="recipient-form" class="gift-form"><div class="field-group"><label>Name</label><input name="name" maxlength="80" required></div><div class="field-group"><label>Birthday</label><input name="birthday" type="text" inputmode="numeric" maxlength="5" placeholder="MM/DD"></div><div class="field-group"><label>Budget ($)</label><input name="budget" type="number" min="0" step="0.01"></div><div class="field-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div><div class="gift-form-actions"><button class="primary-button" id="save-recipient" type="submit">Add recipient</button><button class="secondary-button" id="cancel-recipient" type="button" hidden>Cancel edit</button></div></form><p id="recipient-message" class="auth-message" role="status" hidden></p><div id="recipient-list" class="gift-list"></div></section>';
   document.querySelector("#back-home").addEventListener("click",()=>renderHouseholdHome(user,household,householdId));
   const form=document.querySelector("#recipient-form"),list=document.querySelector("#recipient-list"),msg=document.querySelector("#recipient-message"),save=document.querySelector("#save-recipient"),cancel=document.querySelector("#cancel-recipient");let editId=null;
   function notice(t,k="info"){msg.textContent=t;msg.dataset.kind=k;msg.hidden=false;}
@@ -433,11 +433,11 @@ async function renderGiftRecipients(user, household, householdId) {
     const gifts=gs.docs.map(x=>x.data());
     if(!people.length){list.innerHTML='<p class="empty-state">No recipients added yet.</p>';return;}
     list.innerHTML=people.map(r=>{const rg=gifts.filter(g=>g.recipientId===r.id),spent=rg.reduce((n,g)=>n+(g.paidPriceCents||0),0);return '<article class="child-card"><div class="child-card-main"><h3>'+escapeHtml(r.name)+'</h3><p>'+(r.birthday?'Birthday: '+escapeHtml(formatBirthday(r.birthday)):'Birthday not added')+'</p><p>Budget: '+(r.budgetCents==null?'—':formatMoney(r.budgetCents))+' · Spent: '+formatMoney(spent)+'</p><p>'+rg.length+' gifts</p></div><div class="child-card-actions"><button class="text-button edit-recipient" data-id="'+r.id+'" type="button">Edit</button><button class="text-button archive-recipient" data-id="'+r.id+'" type="button">Archive</button><button class="text-button recipient-gifts" data-id="'+r.id+'" type="button">Gift list</button></div></article>';}).join("");
-    list.querySelectorAll(".edit-recipient").forEach(b=>b.addEventListener("click",()=>{const r=people.find(x=>x.id===b.dataset.id);editId=r.id;form.elements.name.value=r.name||"";form.elements.birthday.value=r.birthday||"";form.elements.budget.value=r.budgetCents==null?"":(r.budgetCents/100).toFixed(2);form.elements.notes.value=r.notes||"";save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth"});}));
+    list.querySelectorAll(".edit-recipient").forEach(b=>b.addEventListener("click",()=>{const r=people.find(x=>x.id===b.dataset.id);editId=r.id;form.elements.name.value=r.name||"";form.elements.birthday.value=formatBirthdayInput(r.birthday);form.elements.budget.value=r.budgetCents==null?"":(r.budgetCents/100).toFixed(2);form.elements.notes.value=r.notes||"";save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth"});}));
     list.querySelectorAll(".archive-recipient").forEach(b=>b.addEventListener("click",async()=>{const r=people.find(x=>x.id===b.dataset.id);if(!confirm("Archive "+r.name+"? Gift records will be kept."))return;try{await updateDoc(doc(recipientsRef,r.id),{active:false,updatedAt:serverTimestamp()});await load();}catch(e){notice(friendlyError(e),"error");}}));
     list.querySelectorAll(".recipient-gifts").forEach(b=>b.addEventListener("click",()=>{const r=people.find(x=>x.id===b.dataset.id);renderRecipientGiftList(user,household,householdId,r);}));
   }
-  form.addEventListener("submit",async e=>{e.preventDefault();const name=form.elements.name.value.trim(),budget=form.elements.budget.value;if(!name)return;save.disabled=true;const data={name,birthday:form.elements.birthday.value||null,budgetCents:budget===""?null:Math.round(Number(budget)*100),notes:form.elements.notes.value.trim(),active:true,updatedAt:serverTimestamp()};try{if(editId)await updateDoc(doc(recipientsRef,editId),data);else await addDoc(recipientsRef,{...data,createdAt:serverTimestamp()});reset();await load();notice("Recipient saved.","success");}catch(e){notice(friendlyError(e),"error");}finally{save.disabled=false;}});
+  form.addEventListener("submit",async e=>{e.preventDefault();const name=form.elements.name.value.trim(),budget=form.elements.budget.value;if(!name)return;save.disabled=true;const birthday=parseBirthday(form.elements.birthday.value);const data={name,birthday,budgetCents:budget===""?null:Math.round(Number(budget)*100),notes:form.elements.notes.value.trim(),active:true,updatedAt:serverTimestamp()};try{if(editId)await updateDoc(doc(recipientsRef,editId),data);else await addDoc(recipientsRef,{...data,createdAt:serverTimestamp()});reset();await load();notice("Recipient saved.","success");}catch(e){notice(friendlyError(e),"error");}finally{save.disabled=false;}});
   try{await load();}catch(e){notice(friendlyError(e),"error");}
 }
 
@@ -1304,9 +1304,26 @@ function formatMoney(cents) {
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 }
+function parseBirthday(value) {
+  const input = String(value || "").trim();
+  if (!input) return null;
+  const match = input.match(/^(\d{1,2})[/-](\d{1,2})$/);
+  if (!match) throw new Error("Enter a birthday as MM/DD, without a year.");
+  const month = Number(match[1]), day = Number(match[2]);
+  const check = new Date(2000, month - 1, day);
+  if (month < 1 || month > 12 || day < 1 || check.getMonth() !== month - 1 || check.getDate() !== day) throw new Error("Enter a valid month and day.");
+  return String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+}
+function formatBirthdayInput(value) {
+  if (!value) return "";
+  const parts = value.split("-");
+  return parts.length === 3 ? parts[1] + "/" + parts[2] : parts[0] + "/" + parts[1];
+}
 function formatBirthday(value) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  const parts = value.split("-").map(Number);
+  const month = parts.length === 3 ? parts[1] : parts[0];
+  const day = parts.length === 3 ? parts[2] : parts[1];
+  return new Date(2000, month - 1, day).toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
 async function renderGuestWishlist(user, token) {
