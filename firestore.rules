@@ -1,41 +1,73 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function signedIn() {
       return request.auth != null;
     }
 
+    function memberPath(householdId, uid) {
+      return /databases/$(database)/documents/households/$(householdId)/members/$(uid);
+    }
+
     function isHouseholdMember(householdId) {
       return signedIn()
-        && exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid))
-        && get(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data.active == true;
+        && exists(memberPath(householdId, request.auth.uid))
+        && get(memberPath(householdId, request.auth.uid)).data.active == true;
     }
 
-    // Household root: members can read and update household settings.
-    // Creation/deletion and membership administration will use a controlled
-    // onboarding process rather than allowing arbitrary client-side writes.
-    match /households/{householdId} {
-      allow read, update: if isHouseholdMember(householdId);
-      allow create, delete: if false;
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      // First-time account setup creates one profile and its first household
+      // in a single batch. Additional household invitations are a later step.
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['householdIds', 'createdAt'])
+        && request.resource.data.householdIds is list
+        && request.resource.data.householdIds.size() == 1
+        && getAfter(/databases/$(database)/documents/households/$(request.resource.data.householdIds[0])).data.ownerUid == uid
+        && getAfter(memberPath(request.resource.data.householdIds[0], uid)).data.role == 'owner'
+        && getAfter(memberPath(request.resource.data.householdIds[0], uid)).data.active == true;
+      allow update, delete: if false;
+    }
 
-      // Membership records are readable by household members but cannot be
-      // changed by ordinary clients in this first ruleset.
+    match /households/{householdId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'timezone', 'ownerUid', 'active', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.active == true
+        && getAfter(memberPath(householdId, request.auth.uid)).data.role == 'owner'
+        && getAfter(memberPath(householdId, request.auth.uid)).data.active == true;
+
+      allow read: if isHouseholdMember(householdId);
+      allow update: if isHouseholdMember(householdId)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.active == resource.data.active
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'timezone', 'updatedAt']);
+      allow delete: if false;
+
       match /members/{uid} {
         allow read: if isHouseholdMember(householdId);
-        allow write: if false;
+        allow create: if signedIn()
+          && uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['role', 'active', 'joinedAt'])
+          && request.resource.data.role == 'owner'
+          && request.resource.data.active == true
+          && getAfter(/databases/$(database)/documents/households/$(householdId)).data.ownerUid == request.auth.uid;
+        allow update, delete: if false;
       }
 
-      // All other household-owned records are private to active members.
-      // Guest wishlist access is intentionally NOT enabled by this rule.
-      match /{document=**} {
-        allow read, write: if isHouseholdMember(householdId);
+      // Explicitly enumerate household collections so the member directory
+      // cannot accidentally inherit broad write access from a recursive rule.
+      match /{collection}/{documentId} {
+        allow read, write: if isHouseholdMember(householdId)
+          && collection in [
+            'children', 'giftRecipients', 'giftGivers', 'giftGiverBudgets',
+            'gifts', 'inventory', 'giftCategories', 'giftStatuses',
+            'wishlistCategories', 'wishlistItems', 'shareLinks', 'claims'
+          ];
       }
     }
 
-    // No public guest paths are enabled yet. Add narrowly scoped token-based
-    // reads and name-confirmed claim writes only after emulator tests prove
-    // filtered-link access and shared claim-state behavior.
     match /publicShares/{token} {
       allow read, write: if false;
       match /{document=**} {
@@ -43,7 +75,6 @@ service cloud.firestore {
       }
     }
 
-    // Default deny for every path not explicitly allowed above.
     match /{document=**} {
       allow read, write: if false;
     }
