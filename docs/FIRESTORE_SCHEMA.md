@@ -41,8 +41,9 @@ The member document ID is the Firebase Authentication UID.
 
 ## Children and people
 
-`children/{childId}`
-- `name`, `displayName`, `birthday` (optional date string), `active`, `sortOrder`, timestamps.
+`households/{householdId}/children/{childId}`
+- `name` (required), `displayName` (same initial value as name), `birthday` (optional `YYYY-MM-DD` date string or null), `active` (boolean), `sortOrder` (number), `createdAt`, `updatedAt`.
+- Parents create child records from the household dashboard. Removing a child from the active list sets `active: false`; it does not delete the record or its gift/wishlist history.
 
 `giftRecipients/{recipientId}`
 - `name`, `birthday` (optional date string), `budgetCents` (optional), `notes`, `active`, timestamps.
