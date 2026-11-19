@@ -331,10 +331,20 @@ async function renderChildGiftList(user, household, householdId, child) {
       <p class="eyebrow">Our Gifts · Christmas</p>
       <h1 id="gift-child-name"></h1>
       <p class="welcome-copy">Track gifts purchased for this child.</p>
+      <button class="secondary-button settings-toggle" id="gift-settings-toggle" type="button">Manage categories &amp; statuses</button>
+      <section id="gift-settings" class="gift-settings" hidden>
+        <h2>Gift categories</h2><p class="section-copy">Rename, recolor, add, or archive categories. Existing gifts keep archived labels.</p>
+        <div id="gift-category-settings" class="settings-list"></div>
+        <form id="add-gift-category" class="settings-add-form"><input name="label" maxlength="40" placeholder="New category" required><input name="color" type="color" value="#dce8df" aria-label="Category color"><button class="secondary-button" type="submit">Add category</button></form>
+        <h2>Gift statuses</h2><p class="section-copy">Statuses are independent of categories.</p>
+        <div id="gift-status-settings" class="settings-list"></div>
+        <form id="add-gift-status" class="settings-add-form"><input name="label" maxlength="40" placeholder="New status" required><input name="color" type="color" value="#e8e5f2" aria-label="Status color"><button class="secondary-button" type="submit">Add status</button></form>
+        <p id="gift-settings-message" class="auth-message" role="status" aria-live="polite" hidden></p>
+      </section>
       <form id="gift-form" class="gift-form">
         <div class="field-group"><label for="gift-item">Gift</label><input id="gift-item" name="item" maxlength="120" required placeholder="Gift name"></div>
-        <div class="field-group"><label for="gift-category">Category</label><select id="gift-category" name="category"><option>Undecided</option><option>Santa</option><option>Stocking</option><option>Main</option><option>Advent</option></select></div>
-        <div class="field-group"><label for="gift-status">Status</label><select id="gift-status" name="status"><option>Need to buy</option><option>Bought</option><option>Wrapped</option></select></div>
+        <div class="field-group"><label for="gift-category">Category</label><select id="gift-category" name="category" required></select></div>
+        <div class="field-group"><label for="gift-status">Status</label><select id="gift-status" name="status" required></select></div>
         <div class="field-group"><label for="gift-paid">Paid price ($)</label><input id="gift-paid" name="paidPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
         <div class="field-group"><label for="gift-regular">Regular price ($)</label><input id="gift-regular" name="regularPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
         <div class="field-group"><label for="gift-store">Store</label><input id="gift-store" name="store" maxlength="100"></div>
@@ -353,6 +363,94 @@ async function renderChildGiftList(user, household, householdId, child) {
   const save = document.querySelector("#save-gift");
   const cancelEdit = document.querySelector("#cancel-gift-edit");
   let editingGiftId = null;
+  const categoryCollection = collection(db, "households", householdId, "giftCategories");
+  const statusCollection = collection(db, "households", householdId, "giftStatuses");
+  const categoryDefaults = [["undecided","Undecided","#e8e5dc"],["santa","Santa","#dce8df"],["stocking","Stocking","#f5e3d5"],["main","Main","#dce5f2"],["advent","Advent","#eee2f1"]];
+  const statusDefaults = [["need-to-buy","Need to buy","#f5e3d5"],["bought","Bought","#dce5f2"],["wrapped","Wrapped","#dce8df"]];
+  let giftCategories = [];
+  let giftStatuses = [];
+  const settingsPanel = document.querySelector("#gift-settings");
+  const settingsMessage = document.querySelector("#gift-settings-message");
+  function settingsNotice(text, kind = "info") { settingsMessage.textContent = text; settingsMessage.dataset.kind = kind; settingsMessage.hidden = false; }
+  async function seedSettings(ref, defaults) {
+    const current = await getDocs(ref);
+    if (!current.empty) return;
+    const batch = writeBatch(db);
+    defaults.forEach((entry, index) => batch.set(doc(ref, entry[0]), { label: entry[1], color: entry[2], sortOrder: (index + 1) * 100, active: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }));
+    await batch.commit();
+  }
+  function refreshGiftSelects() {
+    const oldCategory = form.elements.category.value;
+    const oldStatus = form.elements.status.value;
+    const activeCategories = giftCategories.filter(item => item.active !== false);
+    const activeStatuses = giftStatuses.filter(item => item.active !== false);
+    form.elements.category.innerHTML = activeCategories.map(item => "<option>" + escapeHtml(item.label) + "</option>").join("");
+    form.elements.status.innerHTML = activeStatuses.map(item => "<option>" + escapeHtml(item.label) + "</option>").join("");
+    if (activeCategories.some(item => item.label === oldCategory)) form.elements.category.value = oldCategory;
+    if (activeStatuses.some(item => item.label === oldStatus)) form.elements.status.value = oldStatus;
+  }
+  function renderSettingRows(target, items, type) {
+    target.innerHTML = items.map(item => "<div class=\"settings-row\" data-setting-id=\"" + escapeHtml(item.id) + "\">" +
+      "<input class=\"setting-label\" maxlength=\"40\" value=\"" + escapeHtml(item.label) + "\" aria-label=\"" + type + " name\">" +
+      "<input class=\"setting-color\" type=\"color\" value=\"" + (/^#[0-9a-f]{6}$/i.test(item.color || "") ? item.color : "#e8e5dc") + "\" aria-label=\"" + type + " color\">" +
+      "<button class=\"secondary-button save-setting\" type=\"button\">Save</button>" +
+      (item.active === false ? "<span class=\"archived-label\">Archived</span>" : "<button class=\"text-button archive-setting\" type=\"button\">Archive</button>") + "</div>").join("");
+    target.querySelectorAll(".save-setting").forEach(button => button.addEventListener("click", async () => {
+      const row = button.closest(".settings-row");
+      const item = items.find(value => value.id === row.dataset.settingId);
+      const label = row.querySelector(".setting-label").value.trim();
+      const color = row.querySelector(".setting-color").value;
+      if (!label) return settingsNotice("Enter a name first.", "error");
+      if (items.some(value => value.id !== item.id && value.active !== false && value.label.toLowerCase() === label.toLowerCase())) return settingsNotice("That name is already in use.", "error");
+      button.disabled = true;
+      try {
+        const gifts = await getDocs(collection(db, "households", householdId, "gifts"));
+        const matches = gifts.docs.filter(gift => gift.data()[type] === item.label);
+        const batch = writeBatch(db);
+        matches.forEach(gift => batch.update(gift.ref, { [type]: label, updatedAt: serverTimestamp() }));
+        batch.update(doc(type === "category" ? categoryCollection : statusCollection, item.id), { label, color, updatedAt: serverTimestamp() });
+        await batch.commit();
+        await loadGiftSettings(); await loadGifts(); settingsNotice("Saved.", "success");
+      } catch (error) { settingsNotice(friendlyError(error), "error"); }
+      finally { button.disabled = false; }
+    }));
+    target.querySelectorAll(".archive-setting").forEach(button => button.addEventListener("click", async () => {
+      const row = button.closest(".settings-row");
+      const item = items.find(value => value.id === row.dataset.settingId);
+      if (items.filter(value => value.active !== false).length < 2) return settingsNotice("Keep at least one active " + type + ".", "error");
+      if (!confirm("Archive " + item.label + "? Existing gifts will keep this value.")) return;
+      try {
+        await updateDoc(doc(type === "category" ? categoryCollection : statusCollection, item.id), { active: false, updatedAt: serverTimestamp() });
+        await loadGiftSettings(); await loadGifts(); settingsNotice("Archived. Existing gifts were not changed.", "success");
+      } catch (error) { settingsNotice(friendlyError(error), "error"); }
+    }));
+  }
+  async function loadGiftSettings() {
+    await Promise.all([seedSettings(categoryCollection, categoryDefaults), seedSettings(statusCollection, statusDefaults)]);
+    const results = await Promise.all([getDocs(query(categoryCollection, orderBy("sortOrder", "asc"))), getDocs(query(statusCollection, orderBy("sortOrder", "asc")))]);
+    giftCategories = results[0].docs.map(row => ({ id: row.id, ...row.data() }));
+    giftStatuses = results[1].docs.map(row => ({ id: row.id, ...row.data() }));
+    refreshGiftSelects();
+    renderSettingRows(document.querySelector("#gift-category-settings"), giftCategories, "category");
+    renderSettingRows(document.querySelector("#gift-status-settings"), giftStatuses, "status");
+  }
+  document.querySelector("#gift-settings-toggle").addEventListener("click", async () => {
+    settingsPanel.hidden = !settingsPanel.hidden;
+    if (!settingsPanel.hidden) try { await loadGiftSettings(); } catch (error) { settingsNotice(friendlyError(error), "error"); }
+  });
+  async function addGiftSetting(settingForm, type) {
+    const label = settingForm.elements.label.value.trim();
+    const items = type === "category" ? giftCategories : giftStatuses;
+    if (!label) return;
+    if (items.some(item => item.active !== false && item.label.toLowerCase() === label.toLowerCase())) return settingsNotice("That name is already in use.", "error");
+    const ref = type === "category" ? categoryCollection : statusCollection;
+    try {
+      await addDoc(ref, { label, color: settingForm.elements.color.value, sortOrder: (items.length + 1) * 100, active: true, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      settingForm.reset(); await loadGiftSettings(); settingsNotice("Added.", "success");
+    } catch (error) { settingsNotice(friendlyError(error), "error"); }
+  }
+  document.querySelector("#add-gift-category").addEventListener("submit", event => { event.preventDefault(); addGiftSetting(event.currentTarget, "category"); });
+  document.querySelector("#add-gift-status").addEventListener("submit", event => { event.preventDefault(); addGiftSetting(event.currentTarget, "status"); });
   function resetGiftForm() {
     editingGiftId = null; form.reset(); save.textContent = "Add gift"; cancelEdit.hidden = true;
   }
@@ -381,7 +479,7 @@ async function renderChildGiftList(user, household, householdId, child) {
           <div class="gift-card-actions">
             <label class="status-control">Status
               <select class="gift-status-select" data-gift-id="${escapeHtml(gift.id)}">
-                ${["Need to buy","Bought","Wrapped"].map(value => '<option' + (gift.status === value ? ' selected' : '') + '>' + value + '</option>').join("")}
+                ${giftStatuses.filter(value => value.active !== false || value.label === gift.status).map(value => '<option' + (gift.status === value.label ? ' selected' : '') + '>' + escapeHtml(value.label) + '</option>').join("")}
               </select>
             </label>
             <div class="gift-card-order" aria-label="Reorder gift">
@@ -501,6 +599,7 @@ async function renderChildGiftList(user, household, householdId, child) {
     } catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; }
     finally { save.disabled = false; if (!editingGiftId) save.textContent = "Add gift"; }
   });
+  try { await loadGiftSettings(); } catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; }
   await loadGifts();
 }
 
