@@ -244,10 +244,17 @@ async function renderHouseholdHome(user, household, householdId) {
       const children = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
       const active = children.filter(child => child.active !== false);
       if (!active.length) { childList.innerHTML = '<p class="empty-state">No children added yet.</p>'; return; }
+      const giftSnapshot = await getDocs(collection(db, "households", householdId, "gifts"));
+      const spentByChild = {};
+      giftSnapshot.docs.forEach(row => {
+        const gift = row.data();
+        if (gift.childId && gift.paidPriceCents != null) spentByChild[gift.childId] = (spentByChild[gift.childId] || 0) + Number(gift.paidPriceCents);
+      });
       childList.innerHTML = active.map(child => `
         <article class="child-card"><div class="child-card-main">
           <h3>${escapeHtml(child.name || "Child")}</h3>
           <p>${child.birthday ? "Birthday: " + escapeHtml(formatBirthday(child.birthday)) : "Birthday not added"}</p>
+          <p class="child-spent">Spent: ${formatMoney(spentByChild[child.id] || 0)}</p>
         </div><div class="child-card-actions">
           <button class="text-button open-gifts" type="button" data-child-id="${escapeHtml(child.id)}">Gift list</button>
           <button class="text-button edit-child" type="button" data-child-id="${escapeHtml(child.id)}">Edit</button>
@@ -331,8 +338,9 @@ async function renderChildGiftList(user, household, householdId, child) {
         <div class="field-group"><label for="gift-paid">Paid price ($)</label><input id="gift-paid" name="paidPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
         <div class="field-group"><label for="gift-regular">Regular price ($)</label><input id="gift-regular" name="regularPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
         <div class="field-group"><label for="gift-store">Store</label><input id="gift-store" name="store" maxlength="100"></div>
+        <div class="field-group"><label for="gift-purchase-date">Purchase date</label><input id="gift-purchase-date" name="purchaseDate" type="date"></div>
         <div class="field-group gift-notes"><label for="gift-notes">Notes</label><textarea id="gift-notes" name="notes" rows="2" maxlength="1000"></textarea></div>
-        <button class="primary-button" id="save-gift" type="submit">Add gift</button>
+        <div class="gift-form-actions"><button class="primary-button" id="save-gift" type="submit">Add gift</button><button class="secondary-button" id="cancel-gift-edit" type="button" hidden>Cancel edit</button></div>
       </form>
       <p id="gift-message" class="auth-message" role="status" aria-live="polite" hidden></p>
       <div id="gift-list" class="gift-list"><p class="empty-state">Loading gifts…</p></div>
@@ -343,6 +351,12 @@ async function renderChildGiftList(user, household, householdId, child) {
   const list = document.querySelector("#gift-list");
   const message = document.querySelector("#gift-message");
   const save = document.querySelector("#save-gift");
+  const cancelEdit = document.querySelector("#cancel-gift-edit");
+  let editingGiftId = null;
+  function resetGiftForm() {
+    editingGiftId = null; form.reset(); save.textContent = "Add gift"; cancelEdit.hidden = true;
+  }
+  cancelEdit.addEventListener("click", resetGiftForm);
   async function loadGifts() {
     try {
       const snapshot = await getDocs(collection(db, "households", householdId, "gifts"));
@@ -350,16 +364,51 @@ async function renderChildGiftList(user, household, householdId, child) {
         .filter(gift => gift.childId === child.id)
         .sort((a,b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       if (!gifts.length) { list.innerHTML = '<p class="empty-state">No gifts added yet.</p>'; return; }
-      list.innerHTML = gifts.map(gift => `
+      list.innerHTML = gifts.map(gift => {
+        const savings = gift.paidPriceCents != null && gift.regularPriceCents != null
+          ? Number(gift.regularPriceCents) - Number(gift.paidPriceCents) : null;
+        return `
         <article class="gift-card">
           <div class="gift-card-top"><h3>${escapeHtml(gift.item)}</h3><span class="gift-status">${escapeHtml(gift.status)}</span></div>
           <p>${escapeHtml(gift.category)}${gift.store ? " · " + escapeHtml(gift.store) : ""}</p>
           <div class="gift-prices">
-            <span>Paid: ${gift.paidPriceCents == null ? "—" : "$" + (Number(gift.paidPriceCents) / 100).toFixed(2)}</span>
-            <span>Regular: ${gift.regularPriceCents == null ? "—" : "$" + (Number(gift.regularPriceCents) / 100).toFixed(2)}</span>
+            <span>Paid: ${gift.paidPriceCents == null ? "—" : formatMoney(gift.paidPriceCents)}</span>
+            <span>Regular: ${gift.regularPriceCents == null ? "—" : formatMoney(gift.regularPriceCents)}</span>
+            <span>Savings: ${savings == null ? "—" : formatMoney(savings)}</span>
           </div>
+          ${gift.purchaseDate ? '<p class="gift-meta">Purchased: ' + escapeHtml(formatBirthday(gift.purchaseDate)) + '</p>' : ""}
           ${gift.notes ? '<p class="gift-notes-text">' + escapeHtml(gift.notes) + '</p>' : ""}
-        </article>`).join("");
+          <div class="gift-card-actions">
+            <label class="status-control">Status
+              <select class="gift-status-select" data-gift-id="${escapeHtml(gift.id)}">
+                ${["Need to buy","Bought","Wrapped"].map(value => '<option' + (gift.status === value ? ' selected' : '') + '>' + value + '</option>').join("")}
+              </select>
+            </label>
+            <button class="text-button edit-gift" type="button" data-gift-id="${escapeHtml(gift.id)}">Edit</button>
+          </div>
+        </article>`;
+      }).join("");
+      list.querySelectorAll(".gift-status-select").forEach(select => select.addEventListener("change", async () => {
+        select.disabled = true;
+        try { await updateDoc(doc(db, "households", householdId, "gifts", select.dataset.giftId), { status: select.value, updatedAt: serverTimestamp() }); }
+        catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; await loadGifts(); }
+        finally { select.disabled = false; }
+      }));
+      list.querySelectorAll(".edit-gift").forEach(button => button.addEventListener("click", () => {
+        const gift = gifts.find(item => item.id === button.dataset.giftId);
+        if (!gift) return;
+        editingGiftId = gift.id;
+        form.elements.item.value = gift.item || "";
+        form.elements.category.value = gift.category || "Undecided";
+        form.elements.status.value = gift.status || "Need to buy";
+        form.elements.paidPrice.value = gift.paidPriceCents == null ? "" : (gift.paidPriceCents / 100).toFixed(2);
+        form.elements.regularPrice.value = gift.regularPriceCents == null ? "" : (gift.regularPriceCents / 100).toFixed(2);
+        form.elements.store.value = gift.store || "";
+        form.elements.purchaseDate.value = gift.purchaseDate || "";
+        form.elements.notes.value = gift.notes || "";
+        save.textContent = "Save changes"; cancelEdit.hidden = false;
+        form.scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
     } catch (error) { list.innerHTML = ""; message.textContent = friendlyError(error); message.hidden = false; }
   }
   form.addEventListener("submit", async event => {
@@ -372,21 +421,32 @@ async function renderChildGiftList(user, household, householdId, child) {
       const count = existing.docs.filter(row => row.data().childId === child.id).length;
       const paid = form.elements.paidPrice.value;
       const regular = form.elements.regularPrice.value;
-      await addDoc(collection(db, "households", householdId, "gifts"), {
-        childId: child.id, item, category: form.elements.category.value,
-        status: form.elements.status.value,
+      const giftData = {
+        item, category: form.elements.category.value, status: form.elements.status.value,
         paidPriceCents: paid === "" ? null : Math.round(Number(paid) * 100),
         regularPriceCents: regular === "" ? null : Math.round(Number(regular) * 100),
-        store: form.elements.store.value.trim(), notes: form.elements.notes.value.trim(),
-        sortOrder: count * 100, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-      });
-      form.reset(); message.hidden = true; await loadGifts();
+        store: form.elements.store.value.trim(), purchaseDate: form.elements.purchaseDate.value || null,
+        notes: form.elements.notes.value.trim(), updatedAt: serverTimestamp()
+      };
+      if (editingGiftId) {
+        await updateDoc(doc(db, "households", householdId, "gifts", editingGiftId), giftData);
+      } else {
+        const existing = await getDocs(collection(db, "households", householdId, "gifts"));
+        const count = existing.docs.filter(row => row.data().childId === child.id).length;
+        await addDoc(collection(db, "households", householdId, "gifts"), {
+          ...giftData, childId: child.id, sortOrder: count * 100, createdAt: serverTimestamp()
+        });
+      }
+      resetGiftForm(); message.hidden = true; await loadGifts();
     } catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; }
-    finally { save.disabled = false; save.textContent = "Add gift"; }
+    finally { save.disabled = false; if (!editingGiftId) save.textContent = "Add gift"; }
   });
   await loadGifts();
 }
 
+function formatMoney(cents) {
+  return "$" + (Number(cents || 0) / 100).toFixed(2);
+}
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 }
