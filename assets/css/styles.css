@@ -65,3 +65,15 @@ h1{margin:0;font-size:clamp(2rem,6vw,3rem);line-height:1.06;letter-spacing:-.045
 .gift-prices{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--muted);font-size:.84rem}
 .gift-card .gift-notes-text{margin-top:10px;color:var(--ink);white-space:pre-wrap}
 @media(max-width:520px){.gift-form{grid-template-columns:1fr}.gift-form .gift-notes,.gift-form .primary-button{grid-column:auto}}
+
+/* Gift editing, status controls and spending summary */
+.child-spent{font-weight:650;color:var(--accent)!important}
+.gift-form-actions{grid-column:1/-1;display:flex;gap:10px;align-items:center}
+.gift-form-actions .primary-button,.gift-form-actions .secondary-button{margin:0}
+.gift-form-actions .secondary-button{width:auto}
+.gift-card-actions{display:flex;align-items:center;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.status-control{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.82rem}
+.gift-status-select{max-width:150px;min-height:36px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--ink);font:inherit;font-size:.82rem}
+.gift-card-actions .text-button{margin:0}
+.gift-meta{margin:8px 0 0;color:var(--muted);font-size:.82rem}
+@media(max-width:520px){.gift-form-actions{grid-column:auto}.gift-form-actions button{flex:1}.gift-card-actions{flex-wrap:wrap}}
