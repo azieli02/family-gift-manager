@@ -52,3 +52,16 @@ h1{margin:0;font-size:clamp(2rem,6vw,3rem);line-height:1.06;letter-spacing:-.045
 .child-edit-actions{grid-column:1/-1;display:flex;gap:10px;align-items:center}
 .child-edit-actions .primary-button,.child-edit-actions .secondary-button{width:auto;margin:0}
 @media(max-width:520px){.child-edit-form{grid-template-columns:1fr}.child-edit-actions{grid-column:auto}.child-edit-actions button{flex:1}}
+
+/* First child Christmas gift list */
+.gift-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:18px;margin:22px 0;border:1px solid var(--line);border-radius:14px;background:#fbfaf7}
+.gift-form .field-group input,.gift-form .field-group select,.gift-form .field-group textarea{width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:white;color:var(--ink);font:inherit}
+.gift-form .field-group textarea{resize:vertical}.gift-form .gift-notes{grid-column:1/-1}
+.gift-form .primary-button{grid-column:1/-1;margin:0}
+.gift-list{display:grid;gap:12px}.gift-card{padding:16px;border:1px solid var(--line);border-radius:12px;background:white}
+.gift-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.gift-card h3{margin:0;font-size:1.05rem}
+.gift-card>p{margin:7px 0;color:var(--muted);font-size:.88rem}
+.gift-status{flex:none;padding:5px 9px;border-radius:20px;background:var(--accent-soft);color:var(--accent);font-size:.75rem;font-weight:650}
+.gift-prices{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--muted);font-size:.84rem}
+.gift-card .gift-notes-text{margin-top:10px;color:var(--ink);white-space:pre-wrap}
+@media(max-width:520px){.gift-form{grid-template-columns:1fr}.gift-form .gift-notes,.gift-form .primary-button{grid-column:auto}}
