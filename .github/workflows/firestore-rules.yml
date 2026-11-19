@@ -3,6 +3,7 @@ name: Firestore rules tests
 on:
   push:
     paths:
+      - "assets/js/**"
       - "firestore.rules"
       - "tests/**"
       - "firebase.json"
@@ -28,5 +29,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - run: node --check assets/js/app.js
       - run: npm install
       - run: npm run test:rules
