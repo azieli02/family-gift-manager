@@ -209,6 +209,35 @@ test("a guest session can read only its own active share and selected wishlist i
   await assertFails(getDoc(doc(guest,"publicShares","another-token")));
 });
 
+test("a guest cannot bind a session to an inactive or unrelated share", async () => {
+  await seedPublicShare();
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db=context.firestore();
+    await setDoc(doc(db,"publicShares","revoked-token"),{
+      householdId:"household-a",childId:"child-1",giftGiverId:"giver-1",
+      shareLinkId:"giver_child",selectedItemIds:["item-selected"],active:false
+    });
+  });
+  const guest=testEnv.authenticatedContext("guest-invalid").firestore();
+  await assertFails(setDoc(doc(guest,"guestSessions","guest-invalid"),{
+    tokenHash:"revoked-token",createdAt:serverTimestamp()
+  }));
+  await assertFails(setDoc(doc(guest,"guestSessions","guest-invalid"),{
+    tokenHash:"not-a-real-token",createdAt:serverTimestamp()
+  }));
+});
+
+test("a guest cannot change the token bound to an existing session", async () => {
+  await seedPublicShare();
+  const guest=testEnv.authenticatedContext("guest-1").firestore();
+  await assertSucceeds(setDoc(doc(guest,"guestSessions","guest-1"),{
+    tokenHash:"token-hash-123",createdAt:serverTimestamp()
+  }));
+  await assertFails(updateDoc(doc(guest,"guestSessions","guest-1"),{
+    tokenHash:"another-token",lastSeenAt:serverTimestamp()
+  }));
+});
+
 test("a guest can atomically claim a selected available item and create parent-only history", async () => {
   await seedPublicShare();
   const guest=testEnv.authenticatedContext("guest-1").firestore();
