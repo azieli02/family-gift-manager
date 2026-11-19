@@ -56,12 +56,38 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
-      // Explicitly enumerate household collections so the member directory
-      // cannot accidentally inherit broad write access from a recursive rule.
+      match /children/{childId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isHouseholdMember(householdId)
+          && request.resource.data.keys().hasOnly([
+            'name', 'displayName', 'birthday', 'active', 'sortOrder', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60
+          && request.resource.data.displayName == request.resource.data.name
+          && (request.resource.data.birthday == null || request.resource.data.birthday is string)
+          && request.resource.data.active == true
+          && request.resource.data.sortOrder is number;
+        allow update: if isHouseholdMember(householdId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'displayName', 'birthday', 'active', 'sortOrder', 'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60
+          && request.resource.data.displayName == request.resource.data.name
+          && (request.resource.data.birthday == null || request.resource.data.birthday is string)
+          && request.resource.data.active is bool;
+        allow delete: if false;
+      }
+
+      // Explicitly enumerate other household collections so the member directory
+      // and child profiles do not inherit broad access from this rule.
       match /{collection}/{documentId} {
         allow read, write: if isHouseholdMember(householdId)
           && collection in [
-            'children', 'giftRecipients', 'giftGivers', 'giftGiverBudgets',
+            'giftRecipients', 'giftGivers', 'giftGiverBudgets',
             'gifts', 'inventory', 'giftCategories', 'giftStatuses',
             'wishlistCategories', 'wishlistItems', 'shareLinks', 'claims'
           ];
