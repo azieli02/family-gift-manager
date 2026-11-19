@@ -1066,14 +1066,18 @@ async function renderGiftGiverSelections(user, household, householdId, giver) {
         const selectedItemIds=[...itemList.querySelectorAll("input:checked")].map(input=>input.value);
         const existingLink=await getDoc(linkRef);
         const data={childId:child.id,giftGiverId:giver.id,active:true,selectedItemIds,updatedAt:serverTimestamp()};
-        let token=existingLink.exists()?existingLink.data().rawToken:null;
+        let token=localStorage.getItem("fgm-share-token:"+linkId);
         let tokenHash=existingLink.exists()?existingLink.data().tokenHash:null;
-        if(!tokenHash){token=newShareToken();tokenHash=await sha256Hex(token);}
+        if(!tokenHash||!token){token=newShareToken();tokenHash=await sha256Hex(token);}
         const shareRef=doc(db,"publicShares",tokenHash);
         const batch=writeBatch(db);
         batch.set(linkRef,{...data,tokenHash,updatedAt:serverTimestamp(),...(existingLink.exists()?{}:{createdAt:serverTimestamp()})},{merge:true});
         batch.set(shareRef,{householdId,childId:child.id,giftGiverId:giver.id,shareLinkId:linkId,selectedItemIds,active:true,updatedAt:serverTimestamp(),...(existingLink.exists()?{}:{createdAt:serverTimestamp()})},{merge:true});
+        if(existingLink.exists()&&existingLink.data().tokenHash&&existingLink.data().tokenHash!==tokenHash){
+          batch.update(doc(db,"publicShares",existingLink.data().tokenHash),{active:false,updatedAt:serverTimestamp()});
+        }
         await batch.commit();
+        localStorage.setItem("fgm-share-token:"+linkId,token);
         editor.remove();
         target.querySelector("#selection-count-"+CSS.escape(child.id)).textContent=selectedItemIds.length+" items selected";
         const prior=target.querySelector("#share-url-"+CSS.escape(child.id));
@@ -1083,8 +1087,6 @@ async function renderGiftGiverSelections(user, household, householdId, giver) {
           link.innerHTML='<strong>Share link</strong><p><input readonly value="'+escapeHtml(shareUrl(token))+'" aria-label="Share link URL"></p><button class="secondary-button copy-share-link" type="button">Copy link</button>';
           target.querySelector('[data-child-id="'+CSS.escape(child.id)+'"]').closest(".gift-card").appendChild(link);
           link.querySelector(".copy-share-link").addEventListener("click",async()=>{await navigator.clipboard.writeText(shareUrl(token));notice("Link copied.","success");});
-        } else {
-          notice("Selection saved. The existing link token is retained; copy its URL from the saved link section if already available.","success");
         }
         notice("Wishlist selection saved.","success");
       }catch(error){notice(friendlyError(error),"error");button.disabled=false;}
