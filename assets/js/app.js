@@ -1233,7 +1233,7 @@ async function renderChildWishlist(user, household, householdId, child) {
             if(!current.exists()||current.data().availability!=="claimed")throw new Error("This item is no longer marked as claimed.");
             const priorName=current.data().claimedByName||"";
             const undoRef=doc(historyRef);
-            transaction.update(itemRef,{availability:"available",claimedByName:null,claimedAt:null,updatedAt:serverTimestamp()});
+            transaction.update(itemRef,{availability:"available",claimedByName:null,claimedAt:null,claimEventId:null,updatedAt:serverTimestamp()});
             transaction.set(undoRef,{itemId:item.id,childId:child.id,eventType:"undone",enteredName:priorName,createdAt:serverTimestamp()});
           });
           await loadItems();notice("Claim undone. The item is available again.","success");
@@ -1339,10 +1339,11 @@ async function renderGuestWishlist(user, token) {
       const button=form.querySelector("button");button.disabled=true;
       try{
         const batch=writeBatch(guestDb);
+        const claimEventRef=doc(collection(guestDb,"households",share.householdId,"claims"));
         batch.update(doc(guestDb,"households",share.householdId,"wishlistItems",itemId),{
-          availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
+          availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),claimEventId:claimEventRef.id,updatedAt:serverTimestamp()
         });
-        batch.set(doc(guestDb,"households",share.householdId,"claims",itemId),{
+        batch.set(claimEventRef,{
           itemId,childId:share.childId,enteredName:name,eventType:"claimed",
           createdAt:serverTimestamp(),shareTokenHash:tokenHash
         });
