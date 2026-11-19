@@ -42,11 +42,11 @@ The member document ID is the Firebase Authentication UID.
 ## Children and people
 
 `households/{householdId}/children/{childId}`
-- `name` (required), `displayName` (same initial value as name), `birthday` (optional `YYYY-MM-DD` date string or null), `active` (boolean), `sortOrder` (number), `createdAt`, `updatedAt`.
+- `name` (required), `displayName` (same initial value as name), `birthday` (optional `MM-DD` month/day string or null; year is intentionally not collected), `active` (boolean), `sortOrder` (number), `createdAt`, `updatedAt`.
 - Parents create child records from the household dashboard. Removing a child from the active list sets `active: false`; it does not delete the record or its gift/wishlist history.
 
 `giftRecipients/{recipientId}`
-- `name`, `birthday` (optional date string), `budgetCents` (optional), `notes`, `active`, timestamps.
+- `name`, `birthday` (optional `MM-DD` month/day string; no year), `budgetCents` (optional), `notes`, `active`, timestamps.
 - This is the directory for people the household buys gifts for.
 - Implemented under `households/{householdId}/giftRecipients/{recipientId}`. Parents can add, edit, and archive recipients; archive preserves their gift history.
 - Recipient gift records are stored in the household `gifts` collection with `giftType: "recipient"`, `recipientId`, and `childId: null`. The recipient view calculates spent from paid prices and compares it with the optional budget.
