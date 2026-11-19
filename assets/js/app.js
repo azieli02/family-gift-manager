@@ -18,6 +18,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
@@ -979,7 +980,10 @@ async function renderGiftGivers(user, household, householdId) {
       if(!active.length){list.innerHTML='<p class="empty-state">No gift-givers added yet.</p>';return;}
       list.innerHTML=active.map(entry=>`<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(entry.name)}</h3></div>
         ${entry.notes?'<p>'+escapeHtml(entry.notes)+'</p>':""}
-        <div class="gift-card-actions"><button class="text-button edit-gift-giver" data-id="${escapeHtml(entry.id)}" type="button">Edit</button><button class="text-button archive-gift-giver" data-id="${escapeHtml(entry.id)}" type="button">Archive</button></div></article>`).join("");
+        <div class="gift-card-actions"><button class="text-button manage-gift-giver" data-id="${escapeHtml(entry.id)}" type="button">Wishlist selections</button><button class="text-button edit-gift-giver" data-id="${escapeHtml(entry.id)}" type="button">Edit</button><button class="text-button archive-gift-giver" data-id="${escapeHtml(entry.id)}" type="button">Archive</button></div></article>`).join("");
+      list.querySelectorAll(".manage-gift-giver").forEach(button=>button.addEventListener("click",()=>{
+        const entry=entries.find(x=>x.id===button.dataset.id);if(entry)renderGiftGiverSelections(user,household,householdId,entry);
+      }));
       list.querySelectorAll(".edit-gift-giver").forEach(button=>button.addEventListener("click",()=>{
         const entry=entries.find(x=>x.id===button.dataset.id);if(!entry)return;
         editingId=entry.id;form.elements.name.value=entry.name||"";form.elements.notes.value=entry.notes||"";
@@ -1005,6 +1009,60 @@ async function renderGiftGivers(user, household, householdId) {
     finally{save.disabled=false;}
   });
   await load();
+}
+
+async function renderGiftGiverSelections(user, household, householdId, giver) {
+  const childrenRef=collection(db,"households",householdId,"children");
+  const children=(await getDocs(query(childrenRef,orderBy("sortOrder","asc")))).docs.map(row=>({id:row.id,...row.data()})).filter(child=>child.active!==false);
+  appRoot.innerHTML=`
+    <section class="dashboard-panel">
+      <button class="text-button" id="back-givers" type="button">← Gift-givers</button>
+      <p class="eyebrow">Wishlist sharing</p><h1>${escapeHtml(giver.name)}</h1>
+      <p class="welcome-copy">Choose which items this person should see for each child. Selections refer to the master wishlist, so an item is never duplicated.</p>
+      <div id="giver-child-list" class="gift-list"></div>
+      <p id="giver-selection-message" class="auth-message" role="status" aria-live="polite" hidden></p>
+    </section>`;
+  document.querySelector("#back-givers").addEventListener("click",()=>renderGiftGivers(user,household,householdId));
+  const target=document.querySelector("#giver-child-list"),message=document.querySelector("#giver-selection-message");
+  function notice(text,kind="info"){message.textContent=text;message.dataset.kind=kind;message.hidden=false;}
+  if(!children.length){target.innerHTML='<p class="empty-state">Add a child before creating wishlist selections.</p>';return;}
+  target.innerHTML=children.map(child=>`<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(child.name)}</h3></div><p class="gift-meta" id="selection-count-${escapeHtml(child.id)}">Loading selection…</p><div class="gift-card-actions"><button class="secondary-button edit-selection" data-child-id="${escapeHtml(child.id)}" type="button">Choose items</button></div></article>`).join("");
+  target.querySelectorAll(".edit-selection").forEach(button=>button.addEventListener("click",async()=>{
+    const child=children.find(x=>x.id===button.dataset.childId);if(!child)return;
+    const childItemsRef=collection(db,"households",householdId,"wishlistItems");
+    const snapshot=await getDocs(query(childItemsRef,orderBy("sortOrder","asc")));
+    const items=snapshot.docs.map(row=>({id:row.id,...row.data()})).filter(item=>item.childId===child.id&&item.availability!=="unavailable");
+    const linkId=giver.id+"_"+child.id;
+    const linkRef=doc(db,"households",householdId,"shareLinks",linkId);
+    const linkSnap=await getDoc(linkRef);
+    const selected=new Set(linkSnap.exists()?(linkSnap.data().selectedItemIds||[]):[]);
+    const current=target.querySelector("#selection-editor");if(current)current.remove();
+    const editor=document.createElement("section");editor.id="selection-editor";editor.className="children-section";
+    editor.innerHTML=`<h2>${escapeHtml(child.name)} — selected items</h2><p class="section-copy">Check the items ${escapeHtml(giver.name)} may view. Claimed items remain in the selection so their shared status stays visible.</p><div class="settings-list" id="selection-items"></div><div class="gift-form-actions"><button class="primary-button" id="save-selection" type="button">Save selection</button><button class="secondary-button" id="cancel-selection" type="button">Cancel</button></div>`;
+    target.appendChild(editor);
+    const itemList=editor.querySelector("#selection-items");
+    if(!items.length)itemList.innerHTML='<p class="empty-state">This child's wishlist has no shareable items yet.</p>';
+    else itemList.innerHTML=items.map(item=>`<label class="settings-row"><input type="checkbox" value="${escapeHtml(item.id)}" ${selected.has(item.id)?"checked":""}><span>${escapeHtml(item.item)}</span><span class="gift-meta">${escapeHtml(item.availability==="claimed"?"Claimed":item.categoryLabel||"")}</span></label>`).join("");
+    editor.querySelector("#cancel-selection").addEventListener("click",()=>editor.remove());
+    editor.querySelector("#save-selection").addEventListener("click",async()=>{
+      const button=editor.querySelector("#save-selection");button.disabled=true;
+      try{
+        const selectedItemIds=[...itemList.querySelectorAll("input:checked")].map(input=>input.value);
+        const existingLink=await getDoc(linkRef);
+        const data={childId:child.id,giftGiverId:giver.id,active:true,selectedItemIds,updatedAt:serverTimestamp()};
+        if(existingLink.exists())await updateDoc(linkRef,data);
+        else await setDoc(linkRef,{...data,tokenHash:null,createdAt:serverTimestamp()});
+        editor.remove();
+        target.querySelector("#selection-count-"+CSS.escape(child.id)).textContent=selectedItemIds.length+" items selected";
+        notice("Wishlist selection saved.","success");
+      }catch(error){notice(friendlyError(error),"error");button.disabled=false;}
+    });
+  }));
+  for(const child of children){
+    const snap=await getDoc(doc(db,"households",householdId,"shareLinks",giver.id+"_"+child.id));
+    const count=snap.exists()?(snap.data().selectedItemIds||[]).length:0;
+    const el=target.querySelector("#selection-count-"+CSS.escape(child.id));if(el)el.textContent=count+" items selected";
+  }
 }
 
 async function renderChildWishlist(user, household, householdId, child) {
