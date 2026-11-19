@@ -91,19 +91,17 @@ service cloud.firestore {
           || (guestCanAccessItem(householdId, itemId)
             && resource.data.availability == 'available'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'availability', 'claimedByName', 'claimedAt', 'updatedAt'
+              'availability', 'claimedByName', 'claimedAt', 'claimEventId', 'updatedAt'
             ])
             && request.resource.data.availability == 'claimed'
+            && request.resource.data.claimEventId is string
+            && request.resource.data.claimEventId.size() > 0
             && request.resource.data.claimedByName is string
             && request.resource.data.claimedByName.size() > 0
             && request.resource.data.claimedByName.size() <= 80
             && request.resource.data.claimedAt is timestamp
-            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(itemId)).data.itemId == itemId
-            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(itemId)).data.enteredName == request.resource.data.claimedByName
-            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(itemId)).data.shareTokenHash == get(guestSessionPath()).data.tokenHash);
-      }
-
-      match /claims/{claimId} {
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.itemId == itemId
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/claims/$(request.resource.data.claimEventId)).data.enteredName == request.resource.      match /claims/{claimId} {
         allow read: if isHouseholdMember(householdId);
         allow create: if isHouseholdMember(householdId)
           || (signedIn()
@@ -119,7 +117,11 @@ service cloud.firestore {
             && guestCanAccessItem(householdId, request.resource.data.itemId)
             && get(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.availability == 'available'
             && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.availability == 'claimed'
-            && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimedByName == request.resource.data.enteredName);
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimedByName == request.resource.data.enteredName
+            && getAfter(/databases/$(database)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimEventId == claimId);
+        allow update, delete: if isHouseholdMember(householdId);
+      }
+base)/documents/households/$(householdId)/wishlistItems/$(request.resource.data.itemId)).data.claimedByName == request.resource.data.enteredName);
         allow update, delete: if isHouseholdMember(householdId);
       }
 
