@@ -25,3 +25,20 @@ h1{margin:0;font-size:clamp(2rem,6vw,3rem);line-height:1.06;letter-spacing:-.045
 .account-details{display:grid;gap:8px;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}.detail-label{color:var(--muted);font-size:.78rem;font-weight:650;text-transform:uppercase;letter-spacing:.06em}.account-details code{overflow-wrap:anywhere;font-size:.8rem}
 .app-footer{padding:24px 0;color:var(--muted);font-size:.78rem;text-align:center}
 @media(max-width:520px){.app-shell{width:min(100% - 24px,1080px)}.app-header{min-height:64px}.auth-panel{margin:40px auto;border-radius:16px}}
+
+/* Household dashboard and child profiles */
+.dashboard-panel{max-width:760px;margin:clamp(32px,7vh,72px) auto;padding:clamp(22px,4vw,38px);background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 40px rgb(40 35 25 / 5%)}
+.dashboard-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.dashboard-heading .welcome-copy{margin-bottom:24px}
+.dashboard-heading h1{font-size:clamp(2rem,5vw,2.7rem)}.sign-out-button{width:auto;min-width:92px;margin:0;white-space:nowrap}
+.children-section{padding-top:24px;border-top:1px solid var(--line)}.children-section h2{margin:0;font-size:1.35rem;letter-spacing:-.02em}
+.section-copy{margin:7px 0 18px;color:var(--muted);font-size:.9rem;line-height:1.5}
+.child-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end;gap:12px}
+.field-group{display:grid;gap:8px}.field-group label{font-size:.84rem;font-weight:650}
+.field-group input{width:100%;min-width:0;min-height:46px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:white;color:var(--ink);font:inherit}
+.child-form .primary-button{margin:0;white-space:nowrap}
+.optional-label{color:var(--muted);font-weight:400}
+.children-list{display:grid;gap:10px;margin-top:18px}
+.child-card{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 16px;border:1px solid var(--line);border-radius:12px}
+.child-card h3{margin:0;font-size:1rem}.child-card p{margin:5px 0 0;color:var(--muted);font-size:.86rem}
+.child-card .text-button{margin:0;flex:none}.empty-state{margin:0;padding:18px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:.9rem;text-align:center}
+@media(max-width:620px){.dashboard-heading{display:block}.sign-out-button{margin:0 0 22px}.child-form{grid-template-columns:1fr}.child-form .primary-button{width:100%;margin-top:4px}.dashboard-panel{margin:24px auto}}
