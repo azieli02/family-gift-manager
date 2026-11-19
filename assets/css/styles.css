@@ -1,0 +1,119 @@
+:root {
+  color-scheme: light;
+  --page: #f7f5f0;
+  --surface: #ffffff;
+  --ink: #292824;
+  --muted: #77736b;
+  --line: #e8e4dc;
+  --accent: #496b5b;
+  --accent-soft: #e8efe9;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--page);
+  color: var(--ink);
+}
+
+.app-shell {
+  width: min(100% - 32px, 1080px);
+  min-height: 100vh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.brand-mark { font-size: 1.45rem; }
+
+.connection-status {
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+main { flex: 1; }
+
+.welcome-panel {
+  max-width: 680px;
+  margin: clamp(64px, 12vh, 120px) auto;
+  padding: clamp(24px, 5vw, 48px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgb(40 35 25 / 5%);
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--accent);
+  font-size: .75rem;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 520px;
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  line-height: 1.06;
+  letter-spacing: -.045em;
+}
+
+.welcome-copy {
+  max-width: 520px;
+  margin: 18px 0 28px;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.setup-note {
+  padding: 16px 18px;
+  background: var(--accent-soft);
+  border-radius: 12px;
+  line-height: 1.5;
+}
+
+.setup-note strong { font-size: .92rem; }
+.setup-note p {
+  margin: 5px 0 0;
+  color: #526057;
+  font-size: .9rem;
+}
+
+.app-footer {
+  padding: 24px 0;
+  color: var(--muted);
+  font-size: .78rem;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .app-shell { width: min(100% - 24px, 1080px); }
+  .app-header { min-height: 64px; }
+  .welcome-panel { margin: 48px auto; border-radius: 16px; }
+}
