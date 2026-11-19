@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
 import {
   createUserWithEmailAndPassword,
+  getAuth,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -10,7 +11,7 @@ import { getFirestore } from "https://www.gstatic.com/firebasejs/11.10.0/firebas
 import { firebaseConfig } from "./firebase-config.js";
 
 const firebaseApp = initializeApp(firebaseConfig);
-export const auth = (await import("https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js")).getAuth(firebaseApp);
+export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
 
 const status = document.querySelector("#connection-status");
