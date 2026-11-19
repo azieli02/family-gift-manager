@@ -248,7 +248,41 @@ async function renderHouseholdHome(user, household, householdId) {
         <article class="child-card"><div class="child-card-main">
           <h3>${escapeHtml(child.name || "Child")}</h3>
           <p>${child.birthday ? "Birthday: " + escapeHtml(formatBirthday(child.birthday)) : "Birthday not added"}</p>
-        </div><button class="text-button deactivate-child" type="button" data-child-id="${escapeHtml(child.id)}">Remove</button></article>`).join("");
+        </div><div class="child-card-actions">
+          <button class="text-button edit-child" type="button" data-child-id="${escapeHtml(child.id)}">Edit</button>
+          <button class="text-button deactivate-child" type="button" data-child-id="${escapeHtml(child.id)}">Remove</button>
+        </div>
+        <form class="child-edit-form" data-child-id="${escapeHtml(child.id)}" hidden>
+          <div class="field-group"><label>Name</label><input name="name" maxlength="60" value="${escapeHtml(child.name || "")}" required></div>
+          <div class="field-group"><label>Birthday (optional)</label><input name="birthday" type="date" value="${escapeHtml(child.birthday || "")}"></div>
+          <div class="child-edit-actions"><button class="primary-button" type="submit">Save changes</button><button class="secondary-button cancel-edit" type="button">Cancel</button></div>
+        </form></article>`).join("");
+      childList.querySelectorAll(".edit-child").forEach(button => button.addEventListener("click", () => {
+        const form = childList.querySelector(`.child-edit-form[data-child-id="${button.dataset.childId}"]`);
+        form.hidden = !form.hidden;
+      }));
+      childList.querySelectorAll(".child-edit-form").forEach(form => {
+        form.querySelector(".cancel-edit").addEventListener("click", () => { form.hidden = true; });
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          const child = children.find(item => item.id === form.dataset.childId);
+          const name = form.elements.name.value.trim();
+          const birthday = form.elements.birthday.value;
+          if (!child || !name) return;
+          const save = form.querySelector('button[type="submit"]');
+          save.disabled = true; save.textContent = "Saving…";
+          try {
+            await updateDoc(doc(db, "households", householdId, "children", child.id), {
+              name, displayName: name, birthday: birthday || null, updatedAt: serverTimestamp()
+            });
+            await loadChildren();
+            showChildMessage("Child profile updated.", "success");
+          } catch (error) {
+            showChildMessage(friendlyError(error), "error");
+            save.disabled = false; save.textContent = "Save changes";
+          }
+        });
+      });
       childList.querySelectorAll(".deactivate-child").forEach(button => button.addEventListener("click", async () => {
         const child = children.find(item => item.id === button.dataset.childId);
         if (!child || !confirm(`Remove ${child.name} from the active children list? Their records will be kept.`)) return;
