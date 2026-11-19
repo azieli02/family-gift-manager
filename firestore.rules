@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isHouseholdMember(householdId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data.active == true;
+    }
+
+    // Household root: members can read and update household settings.
+    // Creation/deletion and membership administration will use a controlled
+    // onboarding process rather than allowing arbitrary client-side writes.
+    match /households/{householdId} {
+      allow read, update: if isHouseholdMember(householdId);
+      allow create, delete: if false;
+
+      // Membership records are readable by household members but cannot be
+      // changed by ordinary clients in this first ruleset.
+      match /members/{uid} {
+        allow read: if isHouseholdMember(householdId);
+        allow write: if false;
+      }
+
+      // All other household-owned records are private to active members.
+      // Guest wishlist access is intentionally NOT enabled by this rule.
+      match /{document=**} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+    }
+
+    // No public guest paths are enabled yet. Add narrowly scoped token-based
+    // reads and name-confirmed claim writes only after emulator tests prove
+    // filtered-link access and shared claim-state behavior.
+    match /publicShares/{token} {
+      allow read, write: if false;
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Default deny for every path not explicitly allowed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
