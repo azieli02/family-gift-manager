@@ -249,6 +249,7 @@ async function renderHouseholdHome(user, household, householdId) {
           <h3>${escapeHtml(child.name || "Child")}</h3>
           <p>${child.birthday ? "Birthday: " + escapeHtml(formatBirthday(child.birthday)) : "Birthday not added"}</p>
         </div><div class="child-card-actions">
+          <button class="text-button open-gifts" type="button" data-child-id="${escapeHtml(child.id)}">Gift list</button>
           <button class="text-button edit-child" type="button" data-child-id="${escapeHtml(child.id)}">Edit</button>
           <button class="text-button deactivate-child" type="button" data-child-id="${escapeHtml(child.id)}">Remove</button>
         </div>
@@ -257,6 +258,10 @@ async function renderHouseholdHome(user, household, householdId) {
           <div class="field-group"><label>Birthday (optional)</label><input name="birthday" type="date" value="${escapeHtml(child.birthday || "")}"></div>
           <div class="child-edit-actions"><button class="primary-button" type="submit">Save changes</button><button class="secondary-button cancel-edit" type="button">Cancel</button></div>
         </form></article>`).join("");
+      childList.querySelectorAll(".open-gifts").forEach(button => button.addEventListener("click", () => {
+        const child = children.find(item => item.id === button.dataset.childId);
+        if (child) renderChildGiftList(user, household, householdId, child);
+      }));
       childList.querySelectorAll(".edit-child").forEach(button => button.addEventListener("click", () => {
         const form = childList.querySelector(`.child-edit-form[data-child-id="${button.dataset.childId}"]`);
         form.hidden = !form.hidden;
@@ -312,6 +317,76 @@ async function renderHouseholdHome(user, household, householdId) {
   });
   await loadChildren(); setStatus("Signed in");
 }
+async function renderChildGiftList(user, household, householdId, child) {
+  appRoot.innerHTML = `
+    <section class="dashboard-panel">
+      <button class="text-button" id="back-to-children" type="button">← All children</button>
+      <p class="eyebrow">Our Gifts · Christmas</p>
+      <h1 id="gift-child-name"></h1>
+      <p class="welcome-copy">Track gifts purchased for this child.</p>
+      <form id="gift-form" class="gift-form">
+        <div class="field-group"><label for="gift-item">Gift</label><input id="gift-item" name="item" maxlength="120" required placeholder="Gift name"></div>
+        <div class="field-group"><label for="gift-category">Category</label><select id="gift-category" name="category"><option>Undecided</option><option>Santa</option><option>Stocking</option><option>Main</option><option>Advent</option></select></div>
+        <div class="field-group"><label for="gift-status">Status</label><select id="gift-status" name="status"><option>Need to buy</option><option>Bought</option><option>Wrapped</option></select></div>
+        <div class="field-group"><label for="gift-paid">Paid price ($)</label><input id="gift-paid" name="paidPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
+        <div class="field-group"><label for="gift-regular">Regular price ($)</label><input id="gift-regular" name="regularPrice" type="number" min="0" step="0.01" inputmode="decimal"></div>
+        <div class="field-group"><label for="gift-store">Store</label><input id="gift-store" name="store" maxlength="100"></div>
+        <div class="field-group gift-notes"><label for="gift-notes">Notes</label><textarea id="gift-notes" name="notes" rows="2" maxlength="1000"></textarea></div>
+        <button class="primary-button" id="save-gift" type="submit">Add gift</button>
+      </form>
+      <p id="gift-message" class="auth-message" role="status" aria-live="polite" hidden></p>
+      <div id="gift-list" class="gift-list"><p class="empty-state">Loading gifts…</p></div>
+    </section>`;
+  document.querySelector("#gift-child-name").textContent = child.name;
+  document.querySelector("#back-to-children").addEventListener("click", () => renderHouseholdHome(user, household, householdId));
+  const form = document.querySelector("#gift-form");
+  const list = document.querySelector("#gift-list");
+  const message = document.querySelector("#gift-message");
+  const save = document.querySelector("#save-gift");
+  async function loadGifts() {
+    try {
+      const snapshot = await getDocs(collection(db, "households", householdId, "gifts"));
+      const gifts = snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+        .filter(gift => gift.childId === child.id)
+        .sort((a,b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      if (!gifts.length) { list.innerHTML = '<p class="empty-state">No gifts added yet.</p>'; return; }
+      list.innerHTML = gifts.map(gift => `
+        <article class="gift-card">
+          <div class="gift-card-top"><h3>${escapeHtml(gift.item)}</h3><span class="gift-status">${escapeHtml(gift.status)}</span></div>
+          <p>${escapeHtml(gift.category)}${gift.store ? " · " + escapeHtml(gift.store) : ""}</p>
+          <div class="gift-prices">
+            <span>Paid: ${gift.paidPrice == null ? "—" : "$" + Number(gift.paidPrice).toFixed(2)}</span>
+            <span>Regular: ${gift.regularPrice == null ? "—" : "$" + Number(gift.regularPrice).toFixed(2)}</span>
+          </div>
+          ${gift.notes ? '<p class="gift-notes-text">' + escapeHtml(gift.notes) + '</p>' : ""}
+        </article>`).join("");
+    } catch (error) { list.innerHTML = ""; message.textContent = friendlyError(error); message.hidden = false; }
+  }
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const item = form.elements.item.value.trim();
+    if (!item) return;
+    save.disabled = true; save.textContent = "Adding…";
+    try {
+      const existing = await getDocs(collection(db, "households", householdId, "gifts"));
+      const count = existing.docs.filter(row => row.data().childId === child.id).length;
+      const paid = form.elements.paidPrice.value;
+      const regular = form.elements.regularPrice.value;
+      await addDoc(collection(db, "households", householdId, "gifts"), {
+        childId: child.id, item, category: form.elements.category.value,
+        status: form.elements.status.value,
+        paidPrice: paid === "" ? null : Number(paid),
+        regularPrice: regular === "" ? null : Number(regular),
+        store: form.elements.store.value.trim(), notes: form.elements.notes.value.trim(),
+        sortOrder: count * 100, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+      });
+      form.reset(); message.hidden = true; await loadGifts();
+    } catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; }
+    finally { save.disabled = false; save.textContent = "Add gift"; }
+  });
+  await loadGifts();
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 }
