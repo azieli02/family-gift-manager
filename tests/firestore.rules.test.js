@@ -227,6 +227,20 @@ test("a guest cannot bind a session to an inactive or unrelated share", async ()
   }));
 });
 
+test("revoking a public share immediately blocks an existing guest session", async () => {
+  await seedPublicShare();
+  const guest=testEnv.authenticatedContext("guest-1").firestore();
+  await assertSucceeds(setDoc(doc(guest,"guestSessions","guest-1"),{
+    tokenHash:"token-hash-123",createdAt:serverTimestamp()
+  }));
+  await assertSucceeds(getDoc(doc(guest,"households","household-a","wishlistItems","item-selected")));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(),"publicShares","token-hash-123"),{active:false});
+  });
+  await assertFails(getDoc(doc(guest,"publicShares","token-hash-123")));
+  await assertFails(getDoc(doc(guest,"households","household-a","wishlistItems","item-selected")));
+});
+
 test("a guest cannot change the token bound to an existing session", async () => {
   await seedPublicShare();
   const guest=testEnv.authenticatedContext("guest-1").firestore();
