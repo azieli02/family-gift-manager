@@ -11,6 +11,7 @@ import {
   addDoc,
   collection,
   doc,
+  deleteDoc,
   getDoc,
   getDocs,
   getFirestore,
@@ -487,6 +488,7 @@ async function renderChildGiftList(user, household, householdId, child) {
               <button class="order-gift" type="button" data-direction="down" data-gift-id="${escapeHtml(gift.id)}" aria-label="Move ${escapeHtml(gift.item)} down" ${index === gifts.length - 1 ? "disabled" : ""}>↓</button>
             </div>
             <button class="text-button edit-gift" type="button" data-gift-id="${escapeHtml(gift.id)}">Edit</button>
+            <button class="text-button delete-gift" type="button" data-gift-id="${escapeHtml(gift.id)}">Delete</button>
           </div>
         </article>`;
       }).join("");
@@ -554,13 +556,40 @@ async function renderChildGiftList(user, household, householdId, child) {
         catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; await loadGifts(); }
         finally { select.disabled = false; }
       }));
+      list.querySelectorAll(".delete-gift").forEach(button => button.addEventListener("click", async () => {
+        const gift = gifts.find(item => item.id === button.dataset.giftId);
+        if (!gift || !confirm(`Delete "${gift.item}"? This cannot be undone.`)) return;
+        button.disabled = true;
+        try {
+          await deleteDoc(doc(db, "households", householdId, "gifts", gift.id));
+          if (editingGiftId === gift.id) resetGiftForm();
+          message.textContent = "Gift deleted.";
+          message.dataset.kind = "success";
+          message.hidden = false;
+          await loadGifts();
+        } catch (error) {
+          message.textContent = friendlyError(error);
+          message.dataset.kind = "error";
+          message.hidden = false;
+          button.disabled = false;
+        }
+      }));
       list.querySelectorAll(".edit-gift").forEach(button => button.addEventListener("click", () => {
         const gift = gifts.find(item => item.id === button.dataset.giftId);
         if (!gift) return;
         editingGiftId = gift.id;
         form.elements.item.value = gift.item || "";
-        form.elements.category.value = gift.category || "Undecided";
-        form.elements.status.value = gift.status || "Need to buy";
+        const categoryValue = gift.category || "Undecided";
+        const statusValue = gift.status || "Need to buy";
+        [[form.elements.category, categoryValue], [form.elements.status, statusValue]].forEach(([select, value]) => {
+          if (![...select.options].some(option => option.value === value)) {
+            const archived = document.createElement("option");
+            archived.value = value;
+            archived.textContent = value + " (archived)";
+            select.append(archived);
+          }
+          select.value = value;
+        });
         form.elements.paidPrice.value = gift.paidPriceCents == null ? "" : (gift.paidPriceCents / 100).toFixed(2);
         form.elements.regularPrice.value = gift.regularPriceCents == null ? "" : (gift.regularPriceCents / 100).toFixed(2);
         form.elements.store.value = gift.store || "";
