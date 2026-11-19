@@ -262,6 +262,7 @@ async function renderHouseholdHome(user, household, householdId) {
           <p class="child-spent">Spent: ${formatMoney(spentByChild[child.id] || 0)}</p>
         </div><div class="child-card-actions">
           <button class="text-button open-gifts" type="button" data-child-id="${escapeHtml(child.id)}">Gift list</button>
+          <button class="text-button open-wishlist" type="button" data-child-id="${escapeHtml(child.id)}">Wishlist</button>
           <button class="text-button edit-child" type="button" data-child-id="${escapeHtml(child.id)}">Edit</button>
           <button class="text-button deactivate-child" type="button" data-child-id="${escapeHtml(child.id)}">Remove</button>
         </div>
@@ -273,6 +274,10 @@ async function renderHouseholdHome(user, household, householdId) {
       childList.querySelectorAll(".open-gifts").forEach(button => button.addEventListener("click", () => {
         const child = children.find(item => item.id === button.dataset.childId);
         if (child) renderChildGiftList(user, household, householdId, child);
+      }));
+      childList.querySelectorAll(".open-wishlist").forEach(button => button.addEventListener("click", () => {
+        const child = children.find(item => item.id === button.dataset.childId);
+        if (child) renderChildWishlist(user, household, householdId, child);
       }));
       childList.querySelectorAll(".edit-child").forEach(button => button.addEventListener("click", () => {
         const form = childList.querySelector(`.child-edit-form[data-child-id="${button.dataset.childId}"]`);
@@ -940,6 +945,129 @@ async function renderInventory(user, household, householdId) {
     finally{save.disabled=false;if(!editingId)save.textContent="Add to inventory";}
   });
   renderStatusSettings();await loadInventory();
+}
+
+
+async function renderChildWishlist(user, household, householdId, child) {
+  const itemsRef=collection(db,"households",householdId,"wishlistItems");
+  const categoriesRef=collection(db,"households",householdId,"wishlistCategories");
+  const defaults=[["books","Books"],["toys","Toys"],["clothing","Clothing"],["arts-crafts","Arts & Crafts"],["tech","Tech"],["games","Games"],["experiences","Experiences"],["miscellaneous","Miscellaneous"]];
+  const existing=await getDocs(categoriesRef);
+  if(existing.empty){
+    const batch=writeBatch(db);
+    defaults.forEach((entry,index)=>batch.set(doc(categoriesRef,entry[0]),{label:entry[1],sortOrder:(index+1)*100,active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+    await batch.commit();
+  }
+  let categories=(await getDocs(query(categoriesRef,orderBy("sortOrder","asc")))).docs.map(row=>({id:row.id,...row.data()}));
+  appRoot.innerHTML=`
+    <section class="dashboard-panel">
+      <button class="text-button" id="back-wishlist" type="button">← Household</button>
+      <p class="eyebrow">Wishlists</p><h1>${escapeHtml(child.name)}'s wishlist</h1>
+      <p class="welcome-copy">One master list for this child. Gift-giver links will use selections from this list, so an item only exists once.</p>
+      <section class="children-section">
+        <h2>Wishlist categories</h2>
+        <div id="wishlist-category-list" class="settings-list"></div>
+        <form id="wishlist-category-form" class="settings-add-form"><input name="label" maxlength="40" placeholder="Add a category" required><button class="secondary-button" type="submit">Add category</button></form>
+      </section>
+      <form id="wishlist-item-form" class="gift-form">
+        <div class="field-group"><label>Item</label><input name="item" maxlength="120" required></div>
+        <div class="field-group"><label>Description</label><textarea name="description" rows="2" maxlength="1000"></textarea></div>
+        <div class="field-group"><label>Product or retailer URL</label><input name="url" type="url" maxlength="1500" placeholder="https://…"></div>
+        <div class="field-group"><label>Price ($)</label><input name="price" type="number" min="0" step="0.01"></div>
+        <div class="field-group"><label>Category</label><select name="categoryId" required></select></div>
+        <div class="field-group"><label>Availability</label><select name="availability"><option value="available">Available</option><option value="unavailable">No longer wanted</option></select></div>
+        <div class="gift-form-actions"><button class="primary-button" id="save-wishlist-item" type="submit">Add item</button><button class="secondary-button" id="cancel-wishlist-edit" type="button" hidden>Cancel edit</button></div>
+      </form>
+      <p class="auth-message" id="wishlist-message" role="status" aria-live="polite" hidden></p>
+      <div class="gift-list" id="wishlist-items"><p class="empty-state">Loading wishlist…</p></div>
+    </section>`;
+  document.querySelector("#back-wishlist").addEventListener("click",()=>renderHouseholdHome(user,household,householdId));
+  const form=document.querySelector("#wishlist-item-form"), list=document.querySelector("#wishlist-items");
+  const message=document.querySelector("#wishlist-message"), save=document.querySelector("#save-wishlist-item"), cancel=document.querySelector("#cancel-wishlist-edit");
+  let editingId=null;
+  function notice(text,kind="info"){message.textContent=text;message.dataset.kind=kind;message.hidden=false;}
+  function refreshCategorySelect(selected){
+    form.elements.categoryId.innerHTML=categories.filter(x=>x.active!==false).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.label)+'</option>').join("");
+    if(selected)form.elements.categoryId.value=selected;
+  }
+  function renderCategories(){
+    const target=document.querySelector("#wishlist-category-list");
+    target.innerHTML=categories.map(category=>`<div class="settings-row" data-id="${escapeHtml(category.id)}"><input class="category-label" maxlength="40" value="${escapeHtml(category.label)}" aria-label="Category name"><button class="secondary-button save-category" type="button">Save</button>${category.active===false?'<span class="archived-label">Archived</span>':'<button class="text-button archive-category" type="button">Archive</button>'}</div>`).join("");
+    target.querySelectorAll(".save-category").forEach(button=>button.addEventListener("click",async()=>{
+      const row=button.closest(".settings-row"),category=categories.find(x=>x.id===row.dataset.id),label=row.querySelector(".category-label").value.trim();
+      if(!label)return notice("Enter a category name.","error");
+      if(categories.some(x=>x.id!==category.id&&x.active!==false&&x.label.toLowerCase()===label.toLowerCase()))return notice("That category already exists.","error");
+      try{
+        const batch=writeBatch(db);
+        const records=await getDocs(query(itemsRef,orderBy("sortOrder","asc")));
+        records.docs.filter(r=>r.data().childId===child.id&&r.data().categoryId===category.id).forEach(r=>batch.update(r.ref,{categoryLabel:label,updatedAt:serverTimestamp()}));
+        batch.update(doc(categoriesRef,category.id),{label,updatedAt:serverTimestamp()});
+        await batch.commit();categories=(await getDocs(query(categoriesRef,orderBy("sortOrder","asc")))).docs.map(r=>({id:r.id,...r.data()}));
+        refreshCategorySelect();renderCategories();await loadItems();notice("Category saved.","success");
+      }catch(error){notice(friendlyError(error),"error");}
+    }));
+    target.querySelectorAll(".archive-category").forEach(button=>button.addEventListener("click",async()=>{
+      const row=button.closest(".settings-row"),category=categories.find(x=>x.id===row.dataset.id);
+      if(categories.filter(x=>x.active!==false).length<2)return notice("Keep at least one active category.","error");
+      if(!confirm("Archive "+category.label+"? Existing items will keep their category."))return;
+      try{await updateDoc(doc(categoriesRef,category.id),{active:false,updatedAt:serverTimestamp()});categories=(await getDocs(query(categoriesRef,orderBy("sortOrder","asc")))).docs.map(r=>({id:r.id,...r.data()}));refreshCategorySelect();renderCategories();await loadItems();}
+      catch(error){notice(friendlyError(error),"error");}
+    }));
+  }
+  document.querySelector("#wishlist-category-form").addEventListener("submit",async event=>{
+    event.preventDefault();const f=event.currentTarget,label=f.elements.label.value.trim();
+    if(!label)return;
+    if(categories.some(x=>x.active!==false&&x.label.toLowerCase()===label.toLowerCase()))return notice("That category already exists.","error");
+    try{await addDoc(categoriesRef,{label,sortOrder:(categories.length+1)*100,active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});f.reset();categories=(await getDocs(query(categoriesRef,orderBy("sortOrder","asc")))).docs.map(r=>({id:r.id,...r.data()}));refreshCategorySelect();renderCategories();notice("Category added.","success");}
+    catch(error){notice(friendlyError(error),"error");}
+  });
+  function resetForm(){editingId=null;form.reset();refreshCategorySelect();save.textContent="Add item";cancel.hidden=true;}
+  cancel.addEventListener("click",resetForm);
+  async function loadItems(){
+    try{
+      const snapshot=await getDocs(query(itemsRef,orderBy("sortOrder","asc")));
+      const items=snapshot.docs.map(row=>({id:row.id,...row.data()})).filter(item=>item.childId===child.id);
+      if(!items.length){list.innerHTML='<p class="empty-state">No wishlist items yet.</p>';return;}
+      list.innerHTML=items.map(item=>{
+        const category=categories.find(x=>x.id===item.categoryId);
+        return `<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status">${escapeHtml(category?.label||item.categoryLabel||"Uncategorized")}</span></div>
+          ${item.description?'<p>'+escapeHtml(item.description)+'</p>':""}
+          <div class="gift-prices"><span>Price: ${item.priceCents==null?"—":formatMoney(item.priceCents)}</span><span>${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
+          ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
+          ${item.claimedByName?'<p class="gift-meta">Claimed by '+escapeHtml(item.claimedByName)+'</p>':""}
+          <div class="gift-card-actions"><button class="text-button edit-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Edit</button><button class="text-button delete-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Delete</button></div></article>`;
+      }).join("");
+      list.querySelectorAll(".edit-wishlist-item").forEach(button=>button.addEventListener("click",()=>{
+        const item=items.find(x=>x.id===button.dataset.id);if(!item)return;editingId=item.id;
+        form.elements.item.value=item.item||"";form.elements.description.value=item.description||"";form.elements.url.value=item.url||"";
+        form.elements.price.value=item.priceCents==null?"":(item.priceCents/100).toFixed(2);
+        refreshCategorySelect(item.categoryId);form.elements.availability.value=item.availability==="unavailable"?"unavailable":"available";
+        save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth",block:"start"});
+      }));
+      list.querySelectorAll(".delete-wishlist-item").forEach(button=>button.addEventListener("click",async()=>{
+        const item=items.find(x=>x.id===button.dataset.id);if(!item||!confirm('Delete "'+item.item+'"?'))return;
+        try{await deleteDoc(doc(itemsRef,item.id));if(editingId===item.id)resetForm();await loadItems();notice("Wishlist item deleted.","success");}
+        catch(error){notice(friendlyError(error),"error");}
+      }));
+    }catch(error){notice(friendlyError(error),"error");}
+  }
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();const item=form.elements.item.value.trim();if(!item)return;
+    save.disabled=true;
+    try{
+      const price=form.elements.price.value;
+      const categoryId=form.elements.categoryId.value;
+      const category=categories.find(x=>x.id===categoryId);
+      const data={childId:child.id,item,description:form.elements.description.value.trim(),url:form.elements.url.value.trim(),
+        priceCents:price===""?null:Math.round(Number(price)*100),categoryId,categoryLabel:category?.label||"",
+        availability:form.elements.availability.value,updatedAt:serverTimestamp()};
+      if(editingId)await updateDoc(doc(itemsRef,editingId),data);
+      else await addDoc(itemsRef,{...data,sortOrder:(await getDocs(itemsRef)).size*100,claimedByName:null,claimedAt:null,createdAt:serverTimestamp()});
+      resetForm();await loadItems();notice("Wishlist item saved.","success");
+    }catch(error){notice(friendlyError(error),"error");}
+    finally{save.disabled=false;}
+  });
+  refreshCategorySelect();renderCategories();await loadItems();
 }
 
 function formatMoney(cents) {
