@@ -10,6 +10,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   writeBatch,
   serverTimestamp
 } from "firebase/firestore";
@@ -167,5 +168,90 @@ test("a parent cannot access another household's gift-giver or wishlist records"
   await assertFails(getDoc(doc(otherDb, "households", "household-a", "giftGivers", "giver-1")));
   await assertFails(setDoc(doc(otherDb, "households", "household-a", "wishlistItems", "item-1"), {
     item: "Unauthorized"
+  }));
+});
+
+async function seedPublicShare() {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db=context.firestore();
+    await setDoc(doc(db,"households","household-a"),{name:"A",timezone:"America/Detroit",ownerUid:"parent-a",active:true});
+    await setDoc(doc(db,"households","household-a","members","parent-a"),{role:"owner",active:true});
+    await setDoc(doc(db,"households","household-a","wishlistItems","item-selected"),{
+      childId:"child-1",item:"Book",availability:"available",sortOrder:100
+    });
+    await setDoc(doc(db,"households","household-a","wishlistItems","item-private"),{
+      childId:"child-1",item:"Private item",availability:"available",sortOrder:200
+    });
+  });
+  const parent=testEnv.authenticatedContext("parent-a").firestore();
+  const batch=writeBatch(parent);
+  batch.set(doc(parent,"households","household-a","shareLinks","giver_child"),{
+    childId:"child-1",giftGiverId:"giver-1",selectedItemIds:["item-selected"],active:true
+  });
+  batch.set(doc(parent,"publicShares","token-hash-123"),{
+    householdId:"household-a",childId:"child-1",giftGiverId:"giver-1",
+    shareLinkId:"giver_child",selectedItemIds:["item-selected"],active:true
+  });
+  await assertSucceeds(batch.commit());
+}
+
+test("a guest session can read only its own active share and selected wishlist items", async () => {
+  await seedPublicShare();
+  const guest=testEnv.authenticatedContext("guest-1").firestore();
+  await assertSucceeds(setDoc(doc(guest,"guestSessions","guest-1"),{
+    tokenHash:"token-hash-123",createdAt:serverTimestamp()
+  }));
+  await assertSucceeds(getDoc(doc(guest,"publicShares","token-hash-123")));
+  await assertSucceeds(getDoc(doc(guest,"households","household-a","wishlistItems","item-selected")));
+  await assertFails(getDoc(doc(guest,"households","household-a","wishlistItems","item-private")));
+  await assertFails(getDoc(doc(guest,"households","household-a","children","child-1")));
+  await assertFails(getDoc(doc(guest,"households","household-a","shareLinks","giver_child")));
+  await assertFails(getDoc(doc(guest,"publicShares","another-token")));
+});
+
+test("a guest can atomically claim a selected available item and create parent-only history", async () => {
+  await seedPublicShare();
+  const guest=testEnv.authenticatedContext("guest-1").firestore();
+  await assertSucceeds(setDoc(doc(guest,"guestSessions","guest-1"),{
+    tokenHash:"token-hash-123",createdAt:serverTimestamp()
+  }));
+  const batch=writeBatch(guest);
+  batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
+    availability:"claimed",claimedByName:"Aunt Casey",claimedAt:serverTimestamp(),updatedAt:serverTimestamp()
+  });
+  batch.set(doc(guest,"households","household-a","claims","claim-1"),{
+    itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",
+    eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
+  });
+  await assertSucceeds(batch.commit());
+  await assertFails(getDoc(doc(guest,"households","household-a","claims","claim-1")));
+  const parent=testEnv.authenticatedContext("parent-a").firestore();
+  const claim=await assertSucceeds(getDoc(doc(parent,"households","household-a","claims","claim-1")));
+  assert.equal(claim.data().enteredName,"Aunt Casey");
+});
+
+test("guests cannot claim unselected items, overwrite claims, or edit wishlist details", async () => {
+  await seedPublicShare();
+  const guest=testEnv.authenticatedContext("guest-1").firestore();
+  await assertSucceeds(setDoc(doc(guest,"guestSessions","guest-1"),{
+    tokenHash:"token-hash-123",createdAt:serverTimestamp()
+  }));
+  await assertFails(updateDoc(doc(guest,"households","household-a","wishlistItems","item-private"),{
+    availability:"claimed",claimedByName:"Guest",claimedAt:serverTimestamp()
+  }));
+  await assertFails(updateDoc(doc(guest,"households","household-a","wishlistItems","item-selected"),{
+    item:"Changed item",availability:"claimed",claimedByName:"Guest",claimedAt:serverTimestamp()
+  }));
+  const batch=writeBatch(guest);
+  batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
+    availability:"claimed",claimedByName:"Guest",claimedAt:serverTimestamp()
+  });
+  batch.set(doc(guest,"households","household-a","claims","claim-2"),{
+    itemId:"item-selected",childId:"child-1",enteredName:"Guest",
+    eventType:"claimed",createdAt:serverTimestamp(),shareTokenHash:"token-hash-123"
+  });
+  await assertSucceeds(batch.commit());
+  await assertFails(updateDoc(doc(guest,"households","household-a","wishlistItems","item-selected"),{
+    availability:"claimed",claimedByName:"Another guest",claimedAt:serverTimestamp()
   }));
 });
