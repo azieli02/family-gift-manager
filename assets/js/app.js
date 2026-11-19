@@ -226,13 +226,14 @@ async function renderHouseholdHome(user, household, householdId) {
         <p id="children-message" class="auth-message" role="status" aria-live="polite" hidden></p>
         <div id="children-list" class="children-list" aria-live="polite"><p class="empty-state">Loading children…</p></div>
       </section>
-      <section class="children-section"><h2>Household gifts</h2><p class="section-copy">Shared gifts, separate from children's spending totals.</p><button class="secondary-button" id="open-house-gifts" type="button">Open household gifts</button><button class="secondary-button" id="open-recipient-gifts" type="button">Open gifts for other people</button></section>
+      <section class="children-section"><h2>Household gifts</h2><p class="section-copy">Shared gifts, separate from children's spending totals.</p><button class="secondary-button" id="open-house-gifts" type="button">Open household gifts</button><button class="secondary-button" id="open-recipient-gifts" type="button">Open gifts for other people</button><button class="secondary-button" id="open-inventory" type="button">Open unassigned gift inventory</button></section>
       <div class="account-details"><span class="detail-label">Signed in as</span><span id="account-email"></span></div>
     </section>`;
   document.querySelector("#household-title").textContent = household.name;
   document.querySelector("#account-email").textContent = user.email || "";
   document.querySelector("#open-house-gifts").addEventListener("click", () => renderHouseholdGifts(user, household, householdId));
   document.querySelector("#open-recipient-gifts").addEventListener("click", () => renderGiftRecipients(user, household, householdId));
+  document.querySelector("#open-inventory").addEventListener("click", () => renderInventory(user, household, householdId));
   document.querySelector("#sign-out").addEventListener("click", () => signOut(auth));
   const childForm = document.querySelector("#child-form");
   const addButton = document.querySelector("#add-child");
@@ -748,6 +749,189 @@ async function renderChildGiftList(user, household, householdId, child) {
   });
   try { await loadGiftSettings(); } catch (error) { message.textContent = friendlyError(error); message.dataset.kind = "error"; message.hidden = false; }
   await loadGifts();
+}
+
+
+async function renderInventory(user, household, householdId) {
+  const inventoryRef = collection(db, "households", householdId, "inventory");
+  const statusRef = collection(db, "households", householdId, "inventoryStatuses");
+  const defaults = [["available","Available","#dce8df"],["reserved","Reserved","#f5e3d5"],["assigned","Assigned","#dce5f2"],["given","Given","#eee2f1"]];
+  async function loadStatuses() {
+    const existing = await getDocs(statusRef);
+    if (existing.empty) {
+      const batch = writeBatch(db);
+      defaults.forEach((entry,index) => batch.set(doc(statusRef,entry[0]), {label:entry[1],color:entry[2],sortOrder:(index+1)*100,active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+      await batch.commit();
+    }
+    const snapshot = await getDocs(query(statusRef,orderBy("sortOrder","asc")));
+    return snapshot.docs.map(row => ({id:row.id,...row.data()}));
+  }
+  let statuses = await loadStatuses();
+  appRoot.innerHTML = `
+    <section class="dashboard-panel">
+      <button class="text-button" id="back-inventory" type="button">← Household</button>
+      <p class="eyebrow">Our Gifts</p><h1>Unassigned gift inventory</h1>
+      <p class="welcome-copy">Track gifts you've already bought but haven't assigned yet. Assigning one creates the gift-list record with the original purchase details.</p>
+      <button class="secondary-button settings-toggle" id="inventory-settings-toggle" type="button">Manage inventory statuses</button>
+      <section class="gift-settings" id="inventory-settings" hidden>
+        <h2>Inventory statuses</h2><p class="section-copy">These statuses are separate from gift-list statuses.</p>
+        <div class="settings-list" id="inventory-status-list"></div>
+        <form class="settings-add-form" id="add-inventory-status"><input name="label" maxlength="40" placeholder="New status" required><input name="color" type="color" value="#e8e5dc" aria-label="Status color"><button class="secondary-button" type="submit">Add</button></form>
+      </section>
+      <form id="inventory-form" class="gift-form">
+        <div class="field-group"><label>Item</label><input name="item" maxlength="120" required></div>
+        <div class="field-group"><label>Intended use</label><input name="intendedUse" maxlength="100" placeholder="Birthday, Christmas, general…"></div>
+        <div class="field-group"><label>Status</label><select name="status" required></select></div>
+        <div class="field-group"><label>Paid price ($)</label><input name="paidPrice" type="number" min="0" step="0.01"></div>
+        <div class="field-group"><label>Regular price ($)</label><input name="regularPrice" type="number" min="0" step="0.01"></div>
+        <div class="field-group"><label>Store</label><input name="store" maxlength="100"></div>
+        <div class="field-group"><label>Purchase date</label><input name="purchaseDate" type="date"></div>
+        <div class="field-group gift-notes"><label>Notes</label><textarea name="notes" rows="2" maxlength="1000"></textarea></div>
+        <div class="gift-form-actions"><button class="primary-button" id="save-inventory" type="submit">Add to inventory</button><button class="secondary-button" id="cancel-inventory-edit" type="button" hidden>Cancel edit</button></div>
+      </form>
+      <p class="auth-message" id="inventory-message" role="status" aria-live="polite" hidden></p>
+      <div class="gift-list" id="inventory-list"><p class="empty-state">Loading inventory…</p></div>
+    </section>`;
+  document.querySelector("#back-inventory").addEventListener("click",()=>renderHouseholdHome(user,household,householdId));
+  const form=document.querySelector("#inventory-form"), list=document.querySelector("#inventory-list");
+  const message=document.querySelector("#inventory-message"), save=document.querySelector("#save-inventory");
+  const cancel=document.querySelector("#cancel-inventory-edit"), settings=document.querySelector("#inventory-settings");
+  let editingId=null;
+  function notice(text,kind="info"){message.textContent=text;message.dataset.kind=kind;message.hidden=false;}
+  function refreshStatusSelect(selected) {
+    form.elements.status.innerHTML=statuses.filter(s=>s.active!==false || s.label===selected).map(s=>"<option>"+escapeHtml(s.label)+"</option>").join("");
+    if(selected) form.elements.status.value=selected;
+  }
+  function resetForm(){editingId=null;form.reset();refreshStatusSelect();save.textContent="Add to inventory";cancel.hidden=true;}
+  refreshStatusSelect();
+  function renderStatusSettings(){
+    const target=document.querySelector("#inventory-status-list");
+    target.innerHTML=statuses.map(s=>`<div class="settings-row" data-id="${escapeHtml(s.id)}"><input class="setting-label" maxlength="40" value="${escapeHtml(s.label)}" aria-label="Status name"><input class="setting-color" type="color" value="${/^#[0-9a-f]{6}$/i.test(s.color||"")?s.color:"#e8e5dc"}" aria-label="Status color"><button class="secondary-button save-status" type="button">Save</button>${s.active===false?'<span class="archived-label">Archived</span>':'<button class="text-button archive-status" type="button">Archive</button>'}</div>`).join("");
+    target.querySelectorAll(".save-status").forEach(button=>button.addEventListener("click",async()=>{
+      const row=button.closest(".settings-row"), item=statuses.find(s=>s.id===row.dataset.id), label=row.querySelector(".setting-label").value.trim(), color=row.querySelector(".setting-color").value;
+      if(!label)return notice("Enter a status name.","error");
+      if(statuses.some(s=>s.id!==item.id&&s.active!==false&&s.label.toLowerCase()===label.toLowerCase()))return notice("That status already exists.","error");
+      button.disabled=true;
+      try{
+        const batch=writeBatch(db);
+        const records=await getDocs(inventoryRef);
+        records.docs.filter(r=>r.data().status===item.label).forEach(r=>batch.update(r.ref,{status:label,updatedAt:serverTimestamp()}));
+        batch.update(doc(statusRef,item.id),{label,color,updatedAt:serverTimestamp()});
+        await batch.commit();statuses=await loadStatuses();refreshStatusSelect();renderStatusSettings();await loadInventory();notice("Status saved.","success");
+      }catch(error){notice(friendlyError(error),"error");}finally{button.disabled=false;}
+    }));
+    target.querySelectorAll(".archive-status").forEach(button=>button.addEventListener("click",async()=>{
+      const row=button.closest(".settings-row"), item=statuses.find(s=>s.id===row.dataset.id);
+      if(statuses.filter(s=>s.active!==false).length<2)return notice("Keep at least one active status.","error");
+      if(!confirm("Archive "+item.label+"? Existing inventory records will keep this status."))return;
+      try{await updateDoc(doc(statusRef,item.id),{active:false,updatedAt:serverTimestamp()});statuses=await loadStatuses();refreshStatusSelect();renderStatusSettings();await loadInventory();notice("Status archived.","success");}
+      catch(error){notice(friendlyError(error),"error");}
+    }));
+  }
+  document.querySelector("#inventory-settings-toggle").addEventListener("click",()=>{settings.hidden=!settings.hidden;if(!settings.hidden)renderStatusSettings();});
+  document.querySelector("#add-inventory-status").addEventListener("submit",async event=>{
+    event.preventDefault();const f=event.currentTarget,label=f.elements.label.value.trim();
+    if(!label)return;
+    if(statuses.some(s=>s.active!==false&&s.label.toLowerCase()===label.toLowerCase()))return notice("That status already exists.","error");
+    try{await addDoc(statusRef,{label,color:f.elements.color.value,sortOrder:(statuses.length+1)*100,active:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});f.reset();statuses=await loadStatuses();refreshStatusSelect();renderStatusSettings();notice("Status added.","success");}
+    catch(error){notice(friendlyError(error),"error");}
+  });
+  cancel.addEventListener("click",resetForm);
+  async function loadInventory(){
+    try{
+      const snapshot=await getDocs(inventoryRef);
+      const items=snapshot.docs.map(row=>({id:row.id,...row.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+      if(!items.length){list.innerHTML='<p class="empty-state">No inventory yet.</p>';return;}
+      list.innerHTML=items.map(item=>{
+        const savings=item.paidPriceCents!=null&&item.regularPriceCents!=null?Number(item.regularPriceCents)-Number(item.paidPriceCents):null;
+        const linked=item.assignedGiftId?'<p class="gift-meta">Assigned to a gift list; purchase details were carried over.</p>':"";
+        const canAssign=!item.assignedGiftId&&item.status!=="Given"&&item.status!=="Assigned";
+        return `<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status" style="background:${(statuses.find(s=>s.label===item.status)||{}).color||"#e8efe9"}">${escapeHtml(item.status||"")}</span></div>
+          <p>${item.intendedUse?"Intended use: "+escapeHtml(item.intendedUse):"No intended use added"}${item.store?" · "+escapeHtml(item.store):""}</p>
+          <div class="gift-prices"><span>Paid: ${item.paidPriceCents==null?"—":formatMoney(item.paidPriceCents)}</span><span>Regular: ${item.regularPriceCents==null?"—":formatMoney(item.regularPriceCents)}</span><span>Savings: ${savings==null?"—":formatMoney(savings)}</span></div>
+          ${item.purchaseDate?'<p class="gift-meta">Purchased: '+escapeHtml(formatBirthday(item.purchaseDate))+'</p>':""}${item.notes?'<p class="gift-notes-text">'+escapeHtml(item.notes)+'</p>':""}${linked}
+          <div class="gift-card-actions">${!item.assignedGiftId?'<button class="text-button edit-inventory" type="button" data-id="'+escapeHtml(item.id)+'">Edit</button><button class="text-button delete-inventory" type="button" data-id="'+escapeHtml(item.id)+'">Delete</button>':""}${canAssign?'<button class="text-button assign-inventory" type="button" data-id="'+escapeHtml(item.id)+'">Assign to gift list</button>':""}</div></article>`;
+      }).join("");
+      list.querySelectorAll(".edit-inventory").forEach(button=>button.addEventListener("click",()=>{
+        const item=items.find(i=>i.id===button.dataset.id);if(!item)return;editingId=item.id;
+        form.elements.item.value=item.item||"";form.elements.intendedUse.value=item.intendedUse||"";
+        refreshStatusSelect(item.status);form.elements.paidPrice.value=item.paidPriceCents==null?"":(item.paidPriceCents/100).toFixed(2);
+        form.elements.regularPrice.value=item.regularPriceCents==null?"":(item.regularPriceCents/100).toFixed(2);
+        form.elements.store.value=item.store||"";form.elements.purchaseDate.value=item.purchaseDate||"";form.elements.notes.value=item.notes||"";
+        save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth",block:"start"});
+      }));
+      list.querySelectorAll(".delete-inventory").forEach(button=>button.addEventListener("click",async()=>{
+        const item=items.find(i=>i.id===button.dataset.id);if(!item||!confirm('Delete "'+item.item+'"? This cannot be undone.'))return;
+        try{await deleteDoc(doc(inventoryRef,item.id));if(editingId===item.id)resetForm();await loadInventory();notice("Inventory item deleted.","success");}
+        catch(error){notice(friendlyError(error),"error");}
+      }));
+      list.querySelectorAll(".assign-inventory").forEach(button=>button.addEventListener("click",()=>{
+        const item=items.find(i=>i.id===button.dataset.id);if(!item)return;
+        openAssignment(item);
+      }));
+    }catch(error){list.innerHTML="";notice(friendlyError(error),"error");}
+  }
+  function openAssignment(item){
+    const old=document.querySelector("#inventory-assignment");if(old)old.remove();
+    const modal=document.createElement("section");modal.id="inventory-assignment";modal.className="gift-settings";
+    modal.innerHTML=`<h2>Assign ${escapeHtml(item.item)}</h2><p class="section-copy">The purchase details will be copied to the selected gift list. The inventory record stays linked for reference and won't be counted separately in spending totals.</p>
+      <form id="inventory-assign-form" class="gift-form">
+        <div class="field-group"><label>Assign to</label><select name="targetType"><option value="child">Child</option><option value="recipient">Gift recipient</option><option value="household">Household gifts</option></select></div>
+        <div class="field-group" id="assignment-target-wrap"><label>Person</label><select name="targetId" required></select></div>
+        <div class="field-group"><label>Gift category</label><select name="category"></select></div>
+        <div class="field-group"><label>Gift status</label><select name="giftStatus"></select></div>
+        <div class="gift-form-actions"><button class="primary-button" type="submit">Assign gift</button><button class="secondary-button" id="cancel-assignment" type="button">Cancel</button></div>
+      </form><p class="auth-message" id="assignment-message" hidden></p>`;
+    list.before(modal);
+    const assignForm=modal.querySelector("form"), typeSelect=assignForm.elements.targetType, targetSelect=assignForm.elements.targetId;
+    const [childrenSnap,recipientsSnap,catsSnap,statusSnap]=await Promise.all([getDocs(collection(db,"households",householdId,"children")),getDocs(collection(db,"households",householdId,"giftRecipients")),getDocs(collection(db,"households",householdId,"giftCategories")),getDocs(collection(db,"households",householdId,"giftStatuses"))]);
+    const children=childrenSnap.docs.map(r=>({id:r.id,...r.data()})).filter(x=>x.active!==false);
+    const recipients=recipientsSnap.docs.map(r=>({id:r.id,...r.data()})).filter(x=>x.active!==false);
+    const categories=catsSnap.docs.map(r=>r.data()).filter(x=>x.active!==false);
+    const giftStatuses=statusSnap.docs.map(r=>r.data()).filter(x=>x.active!==false);
+    assignForm.elements.category.innerHTML=categories.map(x=>'<option>'+escapeHtml(x.label)+'</option>').join("");
+    assignForm.elements.giftStatus.innerHTML=giftStatuses.map(x=>'<option>'+escapeHtml(x.label)+'</option>').join("");
+    function refreshTargets(){
+      const type=typeSelect.value, options=type==="child"?children:type==="recipient"?recipients:[];
+      document.querySelector("#assignment-target-wrap").hidden=type==="household";
+      targetSelect.required=type!=="household";
+      targetSelect.innerHTML=options.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+'</option>').join("");
+    }
+    typeSelect.addEventListener("change",refreshTargets);refreshTargets();
+    modal.querySelector("#cancel-assignment").addEventListener("click",()=>modal.remove());
+    assignForm.addEventListener("submit",async event=>{
+      event.preventDefault();const submit=assignForm.querySelector('[type=submit]');submit.disabled=true;
+      try{
+        const type=typeSelect.value,targetId=targetSelect.value;
+        if(type!=="household"&&!targetId)throw new Error("Add an active child or recipient before assigning this gift.");
+        const giftRef=doc(collection(db,"households",householdId,"gifts"));
+        const giftData={item:item.item,category:assignForm.elements.category.value,status:assignForm.elements.giftStatus.value,
+          paidPriceCents:item.paidPriceCents??null,regularPriceCents:item.regularPriceCents??null,store:item.store||"",
+          purchaseDate:item.purchaseDate||null,notes:item.notes||"",inventoryItemId:item.id,updatedAt:serverTimestamp(),createdAt:serverTimestamp()};
+        if(type==="child")giftData.childId=targetId;
+        else if(type==="recipient"){giftData.giftType="recipient";giftData.recipientId=targetId;giftData.childId=null;}
+        else {giftData.giftType="household";giftData.childId=null;}
+        const batch=writeBatch(db);batch.set(giftRef,giftData);
+        batch.update(doc(inventoryRef,item.id),{status:"Assigned",assignedGiftId:giftRef.id,assignedToType:type,assignedToId:targetId||null,updatedAt:serverTimestamp()});
+        await batch.commit();modal.remove();resetForm();await loadInventory();notice("Gift assigned. Its purchase details were carried over.","success");
+      }catch(error){const el=modal.querySelector("#assignment-message");el.textContent=friendlyError(error);el.dataset.kind="error";el.hidden=false;submit.disabled=false;}
+    });
+  }
+  form.addEventListener("submit",async event=>{
+    event.preventDefault();const item=form.elements.item.value.trim();if(!item)return;
+    save.disabled=true;save.textContent=editingId?"Saving…":"Adding…";
+    try{
+      const paid=form.elements.paidPrice.value,regular=form.elements.regularPrice.value;
+      const data={item,intendedUse:form.elements.intendedUse.value.trim(),status:form.elements.status.value,
+        paidPriceCents:paid===""?null:Math.round(Number(paid)*100),regularPriceCents:regular===""?null:Math.round(Number(regular)*100),
+        store:form.elements.store.value.trim(),purchaseDate:form.elements.purchaseDate.value||null,notes:form.elements.notes.value.trim(),updatedAt:serverTimestamp()};
+      if(editingId)await updateDoc(doc(inventoryRef,editingId),data);
+      else await addDoc(inventoryRef,{...data,assignedGiftId:null,createdAt:serverTimestamp()});
+      resetForm();await loadInventory();notice(editingId?"Inventory item updated.":"Added to inventory.","success");
+    }catch(error){notice(friendlyError(error),"error");}
+    finally{save.disabled=false;if(!editingId)save.textContent="Add to inventory";}
+  });
+  renderStatusSettings();await loadInventory();
 }
 
 function formatMoney(cents) {
