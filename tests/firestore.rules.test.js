@@ -260,7 +260,7 @@ test("a guest can atomically claim a selected available item and create parent-o
   }));
   const batch=writeBatch(guest),eventId="claim-event-1";
   batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
-    availability:"claimed",claimedByName:"Aunt Casey",claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
+    availability:"claimed",claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
   });
   batch.set(doc(guest,"households","household-a","claims",eventId),{
     itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",
@@ -285,7 +285,7 @@ test("two guests racing to claim the same item cannot both succeed", async () =>
   const makeClaim = (db, name, eventId) => {
     const batch=writeBatch(db);
     batch.update(doc(db,"households","household-a","wishlistItems","item-selected"),{
-      availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
+      availability:"claimed",claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
     });
     batch.set(doc(db,"households","household-a","claims",eventId),{
       itemId:"item-selected",childId:"child-1",enteredName:name,
@@ -306,7 +306,7 @@ test("a parent can undo a guest claim and append an undo history event", async (
   await testEnv.withSecurityRulesDisabled(async context => {
     const db=context.firestore();
     await updateDoc(doc(db,"households","household-a","wishlistItems","item-selected"),{
-      availability:"claimed",claimedByName:"Aunt Casey"
+      availability:"claimed"
     });
     await setDoc(doc(db,"households","household-a","claims","prior-event"),{
       itemId:"item-selected",childId:"child-1",enteredName:"Aunt Casey",eventType:"claimed"
@@ -337,7 +337,7 @@ test("a guest can claim an item again after a parent undo, with a new history ev
   const claim=(eventId,name)=> {
     const batch=writeBatch(guest);
     batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
-      availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
+      availability:"claimed",claimedAt:serverTimestamp(),claimEventId:eventId,updatedAt:serverTimestamp()
     });
     batch.set(doc(guest,"households","household-a","claims",eventId),{
       itemId:"item-selected",childId:"child-1",enteredName:name,eventType:"claimed",
@@ -370,14 +370,14 @@ test("guests cannot claim unselected items, overwrite claims, or edit wishlist d
     tokenHash:"token-hash-123",createdAt:serverTimestamp()
   }));
   await assertFails(updateDoc(doc(guest,"households","household-a","wishlistItems","item-private"),{
-    availability:"claimed",claimedByName:"Guest",claimedAt:serverTimestamp()
+    availability:"claimed",claimedAt:serverTimestamp()
   }));
   await assertFails(updateDoc(doc(guest,"households","household-a","wishlistItems","item-selected"),{
-    item:"Changed item",availability:"claimed",claimedByName:"Guest",claimedAt:serverTimestamp()
+    item:"Changed item",availability:"claimed",claimedAt:serverTimestamp()
   }));
   const batch=writeBatch(guest);
   batch.update(doc(guest,"households","household-a","wishlistItems","item-selected"),{
-    availability:"claimed",claimedByName:"Guest",claimedAt:serverTimestamp()
+    availability:"claimed",claimedAt:serverTimestamp()
   });
   batch.set(doc(guest,"households","household-a","claims","claim-2"),{
     itemId:"item-selected",childId:"child-1",enteredName:"Guest",
@@ -385,6 +385,6 @@ test("guests cannot claim unselected items, overwrite claims, or edit wishlist d
   });
   await assertFails(batch.commit());
   await assertFails(updateDoc(doc(guest,"households","household-a","wishlistItems","item-selected"),{
-    availability:"claimed",claimedByName:"Another guest",claimedAt:serverTimestamp()
+    availability:"claimed",claimedAt:serverTimestamp()
   }));
 });
