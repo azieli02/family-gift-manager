@@ -11,6 +11,7 @@ import {
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   deleteDoc,
   getDoc,
@@ -1193,8 +1194,12 @@ async function renderChildWishlist(user, household, householdId, child) {
   cancel.addEventListener("click",resetForm);
   async function loadItems(){
     try{
-      const snapshot=await getDocs(query(itemsRef,orderBy("sortOrder","asc")));
+      const [snapshot,claimSnapshot]=await Promise.all([getDocs(query(itemsRef,orderBy("sortOrder","asc"))),getDocs(query(collection(db,"households",householdId,"claims"),orderBy("createdAt","desc")))]);
+      const claimEvents=claimSnapshot.docs.map(row=>({id:row.id,...row.data()}));
+      const claimNames=Object.fromEntries(claimEvents.filter(event=>event.eventType==="claimed").map(event=>[event.id,event.enteredName||""]));
       const items=snapshot.docs.map(row=>({id:row.id,...row.data()})).filter(item=>item.childId===child.id);
+      const legacyClaims=items.filter(item=>item.availability==="claimed"&&Object.prototype.hasOwnProperty.call(item,"claimedByName"));
+      if(legacyClaims.length){const migration=writeBatch(db);legacyClaims.forEach(item=>migration.update(doc(itemsRef,item.id),{claimedByName:deleteField(),updatedAt:serverTimestamp()}));await migration.commit();}
       if(!items.length){list.innerHTML='<p class="empty-state">No wishlist items yet.</p>';return;}
       list.innerHTML=items.map(item=>{
         const category=categories.find(x=>x.id===item.categoryId);
@@ -1202,7 +1207,7 @@ async function renderChildWishlist(user, household, householdId, child) {
           ${item.description?'<p>'+escapeHtml(item.description)+'</p>':""}
           <div class="gift-prices"><span>Price: ${item.priceCents==null?"—":formatMoney(item.priceCents)}</span><span>${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
           ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
-          ${item.claimedByName?'<p class="gift-meta">Claimed by '+escapeHtml(item.claimedByName)+'</p>':""}
+          ${item.availability==="claimed"&&claimNames[item.claimEventId]?'<p class="gift-meta">Claimed by '+escapeHtml(claimNames[item.claimEventId])+'</p>':""}
           ${item.availability==="claimed"?'<div class="gift-card-actions"><button class="text-button view-claim-history" data-id="'+escapeHtml(item.id)+'" type="button">Claim history</button><button class="text-button undo-wishlist-claim" data-id="'+escapeHtml(item.id)+'" type="button">Undo claim</button></div><div class="claim-history" id="claim-history-'+escapeHtml(item.id)+'" hidden></div>':""}
           <div class="gift-card-actions"><button class="text-button move-wishlist-up" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item up">↑</button><button class="text-button move-wishlist-down" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item down">↓</button><button class="text-button edit-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Edit</button><button class="text-button delete-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Delete</button></div></article>`;
       }).join("");
@@ -1229,9 +1234,9 @@ async function renderChildWishlist(user, household, householdId, child) {
           await runTransaction(db,async transaction=>{
             const current=await transaction.get(itemRef);
             if(!current.exists()||current.data().availability!=="claimed")throw new Error("This item is no longer marked as claimed.");
-            const priorName=current.data().claimedByName||"";
+            const priorName=claimNames[current.data().claimEventId]||"";
             const undoRef=doc(historyRef);
-            transaction.update(itemRef,{availability:"available",claimedByName:null,claimedAt:null,claimEventId:null,updatedAt:serverTimestamp()});
+            transaction.update(itemRef,{availability:"available",claimedByName:deleteField(),claimedAt:null,claimEventId:null,updatedAt:serverTimestamp()});
             transaction.set(undoRef,{itemId:item.id,childId:child.id,eventType:"undone",enteredName:priorName,createdAt:serverTimestamp()});
           });
           await loadItems();notice("Claim undone. The item is available again.","success");
@@ -1359,7 +1364,7 @@ async function renderGuestWishlist(user, token) {
     const share=shareSnap.data();
     const itemRefs=share.selectedItemIds.map(id=>doc(guestDb,"households",share.householdId,"wishlistItems",id));
     const itemSnaps=await Promise.all(itemRefs.map(ref=>getDoc(ref)));
-    const items=itemSnaps.filter(s=>s.exists()).map(s=>({id:s.id,...s.data()}));
+    const items=itemSnaps.filter(s=>s.exists()).map(s=>({id:s.id,...s.data()})).filter(item=>item.availability!=="unavailable");
     appRoot.innerHTML=`<section class="dashboard-panel"><p class="eyebrow">Shared wishlist</p><h1>Wishlist</h1><p class="welcome-copy">Choose an item if you'd like to get it. Claimed items remain visible so everyone can avoid duplicates.</p><div class="gift-list" id="guest-items"></div><p class="auth-message" id="guest-message" role="status" aria-live="polite" hidden></p></section>`;
     const list=document.querySelector("#guest-items"),message=document.querySelector("#guest-message");
     if(!items.length){list.innerHTML='<p class="empty-state">There are no items in this shared wishlist.</p>';return;}
@@ -1367,7 +1372,6 @@ async function renderGuestWishlist(user, token) {
       ${item.description?'<p>'+escapeHtml(item.description)+'</p>':""}
       <div class="gift-prices"><span>${item.priceCents==null?"":formatMoney(item.priceCents)}</span></div>
       ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
-      ${item.claimedByName?'<p class="gift-meta">Claimed by '+escapeHtml(item.claimedByName)+'</p>':""}
       ${item.availability==="available"?'<form class="guest-claim-form" data-item-id="'+escapeHtml(item.id)+'"><label>Your name <input name="name" maxlength="80" required></label><button class="primary-button" type="submit">Claim this item</button></form>':""}
     </article>`).join("");
     list.querySelectorAll(".guest-claim-form").forEach(form=>form.addEventListener("submit",async event=>{
@@ -1379,7 +1383,7 @@ async function renderGuestWishlist(user, token) {
         const batch=writeBatch(guestDb);
         const claimEventRef=doc(collection(guestDb,"households",share.householdId,"claims"));
         batch.update(doc(guestDb,"households",share.householdId,"wishlistItems",itemId),{
-          availability:"claimed",claimedByName:name,claimedAt:serverTimestamp(),claimEventId:claimEventRef.id,updatedAt:serverTimestamp()
+          availability:"claimed",claimedAt:serverTimestamp(),claimEventId:claimEventRef.id,updatedAt:serverTimestamp()
         });
         batch.set(claimEventRef,{
           itemId,childId:share.childId,enteredName:name,eventType:"claimed",
