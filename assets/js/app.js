@@ -1144,7 +1144,7 @@ async function renderChildWishlist(user, household, householdId, child) {
         <div class="field-group"><label>Product or retailer URL</label><input name="url" type="url" maxlength="1500" placeholder="https://…"></div>
         <div class="field-group"><label>Price ($)</label><input name="price" type="number" min="0" step="0.01"></div>
         <div class="field-group"><label>Category</label><select name="categoryId" required></select></div>
-        <div class="field-group"><label>Availability</label><select name="availability"><option value="available">Available</option><option value="unavailable">No longer wanted</option></select></div>
+        <div class="field-group"><label>Availability</label><select name="availability"><option value="available">Available</option><option value="purchased">Purchased</option><option value="unavailable">No longer wanted</option></select></div>
         <div class="gift-form-actions"><button class="primary-button" id="save-wishlist-item" type="submit">Add item</button><button class="secondary-button" id="cancel-wishlist-edit" type="button" hidden>Cancel edit</button></div>
       </form>
       <p class="auth-message" id="wishlist-message" role="status" aria-live="polite" hidden></p>
@@ -1205,9 +1205,9 @@ async function renderChildWishlist(user, household, householdId, child) {
         const category=categories.find(x=>x.id===item.categoryId);
         return `<article class="gift-card" draggable="true" data-id="${escapeHtml(item.id)}"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status">${escapeHtml(category?.label||item.categoryLabel||"Uncategorized")}</span></div>
           ${item.description?'<p>'+escapeHtml(item.description)+'</p>':""}
-          <div class="gift-prices"><span>Price: ${item.priceCents==null?"—":formatMoney(item.priceCents)}</span><span>${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
+          <div class="gift-prices"><span>Price: ${item.priceCents==null?"—":formatMoney(item.priceCents)}</span><span>${item.availability==="claimed"?"Claimed":item.availability==="purchased"?"Purchased":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
           ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
-          ${item.availability==="claimed"&&claimNames[item.claimEventId]?'<p class="gift-meta">Claimed by '+escapeHtml(claimNames[item.claimEventId])+'</p>':""}
+          ${item.claimEventId&&claimNames[item.claimEventId]?'<p class="gift-meta">Claimed by '+escapeHtml(claimNames[item.claimEventId])+'</p>':""}
           ${item.availability==="claimed"?'<div class="gift-card-actions"><button class="text-button view-claim-history" data-id="'+escapeHtml(item.id)+'" type="button">Claim history</button><button class="text-button undo-wishlist-claim" data-id="'+escapeHtml(item.id)+'" type="button">Undo claim</button></div><div class="claim-history" id="claim-history-'+escapeHtml(item.id)+'" hidden></div>':""}
           <div class="gift-card-actions"><button class="text-button move-wishlist-up" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item up">↑</button><button class="text-button move-wishlist-down" data-id="${escapeHtml(item.id)}" type="button" aria-label="Move item down">↓</button><button class="text-button edit-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Edit</button><button class="text-button delete-wishlist-item" data-id="${escapeHtml(item.id)}" type="button">Delete</button></div></article>`;
       }).join("");
@@ -1250,7 +1250,7 @@ async function renderChildWishlist(user, household, householdId, child) {
         const availability=form.elements.availability;
         availability.querySelector("option[value='claimed']")?.remove();
         if(item.availability==="claimed")availability.add(new Option("Claimed","claimed"));
-        availability.value=["available","unavailable","claimed"].includes(item.availability)?item.availability:"available";
+        availability.value=["available","purchased","unavailable","claimed"].includes(item.availability)?item.availability:"available";
         save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth",block:"start"});
       }));
       let draggedId=null;
@@ -1368,7 +1368,7 @@ async function renderGuestWishlist(user, token) {
     appRoot.innerHTML=`<section class="dashboard-panel"><p class="eyebrow">Shared wishlist</p><h1>Wishlist</h1><p class="welcome-copy">Choose an item if you'd like to get it. Claimed items remain visible so everyone can avoid duplicates.</p><div class="gift-list" id="guest-items"></div><p class="auth-message" id="guest-message" role="status" aria-live="polite" hidden></p></section>`;
     const list=document.querySelector("#guest-items"),message=document.querySelector("#guest-message");
     if(!items.length){list.innerHTML='<p class="empty-state">There are no items in this shared wishlist.</p>';return;}
-    list.innerHTML=items.map(item=>`<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status">${item.availability==="claimed"?"Claimed":item.availability==="unavailable"?"No longer wanted":"Available"}</span></div>
+    list.innerHTML=items.map(item=>`<article class="gift-card"><div class="gift-card-top"><h3>${escapeHtml(item.item)}</h3><span class="gift-status">${item.availability==="claimed"?"Claimed":item.availability==="purchased"?"Purchased":"Available"}</span></div>
       ${item.description?'<p>'+escapeHtml(item.description)+'</p>':""}
       <div class="gift-prices"><span>${item.priceCents==null?"":formatMoney(item.priceCents)}</span></div>
       ${item.url?'<p><a href="'+escapeHtml(item.url)+'" target="_blank" rel="noopener noreferrer">View item</a></p>':""}
