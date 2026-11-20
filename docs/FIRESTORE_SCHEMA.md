@@ -100,8 +100,8 @@ The member document ID is the Firebase Authentication UID.
   priceCents: 4999,
   categoryId: "toys-category-id",
   categoryLabel: "Toys",
-  availability: "available", // available | claimed | unavailable
-  claimedByName: null,       // self-reported guest-entered name
+  availability: "available", // available | claimed | purchased | unavailable
+  // Claimant name is not stored on the wishlist item; it remains in parent-only claims history.
   claimedAt: null,           // Firestore Timestamp
   claimEventId: null,        // current claim history event ID
   sortOrder: 100,
@@ -147,8 +147,8 @@ The item document holds the current claim state. The history collection holds th
 
 - Guest sees only items selected for the share link.
 - Guest taps the claim button, enters a name, and explicitly confirms.
-- The current item changes to `availability: "claimed"`, `claimedByName`, and `claimedAt`.
-- The item remains visible and marked Claimed in every filtered link containing it.
+- The current item changes to `availability: "claimed"`, `claimedAt`, and `claimEventId`. The guest-entered name is stored only in the parent-only claim history document.
+- The item remains visible and marked Claimed in every filtered link containing it. Guest views do not display claimant names. Purchased items are also visible to guests; items marked No longer wanted are hidden from guest views. Parents can set Available, Purchased, or No longer wanted, and can see Claimed as a separate state.
 - Parents can undo a claim; the item returns to available and a history event is recorded.
 - Guests cannot edit any non-claim wishlist fields.
 - A claim is rejected if the item is not currently available.
