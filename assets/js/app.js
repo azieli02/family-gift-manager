@@ -235,6 +235,7 @@ async function renderHouseholdHome(user, household, householdId) {
           <button class="primary-button" id="add-child" type="submit">Add child</button>
         </form>
         <p id="children-message" class="auth-message" role="status" aria-live="polite" hidden></p>
+        <button class="text-button" id="toggle-archived-children" type="button">Show archived children</button>
         <div id="children-list" class="children-list" aria-live="polite"><p class="empty-state">Loading children…</p></div>
       </section>
       <section class="children-section"><h2>Household gifts</h2><p class="section-copy">Shared gifts, separate from children's spending totals.</p><button class="secondary-button" id="open-house-gifts" type="button">Open household gifts</button><button class="secondary-button" id="open-recipient-gifts" type="button">Open gifts for other people</button><button class="secondary-button" id="open-inventory" type="button">Open unassigned gift inventory</button><button class="secondary-button" id="open-gift-givers" type="button">Manage wishlist gift-givers</button></section>
@@ -251,6 +252,8 @@ async function renderHouseholdHome(user, household, householdId) {
   const addButton = document.querySelector("#add-child");
   const childList = document.querySelector("#children-list");
   const childMessage = document.querySelector("#children-message");
+  let showArchivedChildren = false;
+  document.querySelector("#toggle-archived-children").addEventListener("click", () => { showArchivedChildren = !showArchivedChildren; document.querySelector("#toggle-archived-children").textContent = showArchivedChildren ? "Hide archived children" : "Show archived children"; loadChildren(); });
   function showChildMessage(message, kind = "info") {
     childMessage.textContent = message; childMessage.dataset.kind = kind; childMessage.hidden = false;
   }
@@ -259,8 +262,8 @@ async function renderHouseholdHome(user, household, householdId) {
     try {
       const snapshot = await getDocs(query(collection(db, "households", householdId, "children"), orderBy("sortOrder", "asc")));
       const children = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
-      const active = children.filter(child => child.active !== false);
-      if (!active.length) { childList.innerHTML = '<p class="empty-state">No children added yet.</p>'; return; }
+      const active = children.filter(child => (child.active !== false) !== showArchivedChildren);
+      if (!active.length) { childList.innerHTML = showArchivedChildren ? '<p class="empty-state">No archived children.</p>' : '<p class="empty-state">No children added yet.</p>'; return; }
       const giftSnapshot = await getDocs(collection(db, "households", householdId, "gifts"));
       const spentByChild = {};
       giftSnapshot.docs.forEach(row => {
@@ -276,7 +279,7 @@ async function renderHouseholdHome(user, household, householdId) {
           <button class="text-button open-gifts" type="button" data-child-id="${escapeHtml(child.id)}">Gift list</button>
           <button class="text-button open-wishlist" type="button" data-child-id="${escapeHtml(child.id)}">Wishlist</button>
           <button class="text-button edit-child" type="button" data-child-id="${escapeHtml(child.id)}">Edit</button>
-          <button class="text-button deactivate-child" type="button" data-child-id="${escapeHtml(child.id)}">Remove</button>
+          ${child.active === false ? `<button class="text-button restore-child" type="button" data-child-id="${escapeHtml(child.id)}">Restore</button>` : `<button class="text-button deactivate-child" type="button" data-child-id="${escapeHtml(child.id)}">Archive</button>`}
         </div>
         <form class="child-edit-form" data-child-id="${escapeHtml(child.id)}" hidden>
           <div class="field-group"><label>Name</label><input name="name" maxlength="60" value="${escapeHtml(child.name || "")}" required></div>
@@ -317,9 +320,10 @@ async function renderHouseholdHome(user, household, householdId) {
           }
         });
       });
+      childList.querySelectorAll(".restore-child").forEach(button => button.addEventListener("click", async () => { const child = children.find(item => item.id === button.dataset.childId); if (!child) return; try { await updateDoc(doc(db, "households", householdId, "children", child.id), { active: true, updatedAt: serverTimestamp() }); await loadChildren(); showChildMessage("Child restored.", "success"); } catch (error) { showChildMessage(friendlyError(error), "error"); } }));
       childList.querySelectorAll(".deactivate-child").forEach(button => button.addEventListener("click", async () => {
         const child = children.find(item => item.id === button.dataset.childId);
-        if (!child || !confirm(`Remove ${child.name} from the active children list? Their records will be kept.`)) return;
+        if (!child || !confirm(`Archive ${child.name}? Their records will be kept.`)) return;
         button.disabled = true;
         try {
           await updateDoc(doc(db, "households", householdId, "children", child.id), { active: false, updatedAt: serverTimestamp() });
@@ -422,7 +426,7 @@ async function renderHouseholdGifts(user, household, householdId) {
 async function renderGiftRecipients(user, household, householdId) {
   const recipientsRef=collection(db,"households",householdId,"giftRecipients");
   const giftsRef=collection(db,"households",householdId,"gifts");
-  appRoot.innerHTML='<section class="dashboard-panel"><button class="text-button" id="back-home" type="button">← Household</button><p class="eyebrow">Our Gifts</p><h1>Gifts for other people</h1><p class="welcome-copy">Track recipients, birthdays, budgets, and gifts bought for them.</p><form id="recipient-form" class="gift-form"><div class="field-group"><label>Name</label><input name="name" maxlength="80" required></div><div class="field-group"><label>Birthday</label><input name="birthday" type="text" inputmode="numeric" maxlength="5" placeholder="MM/DD"></div><div class="field-group"><label>Budget ($)</label><input name="budget" type="number" min="0" step="0.01"></div><div class="field-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div><div class="gift-form-actions"><button class="primary-button" id="save-recipient" type="submit">Add recipient</button><button class="secondary-button" id="cancel-recipient" type="button" hidden>Cancel edit</button></div></form><p id="recipient-message" class="auth-message" role="status" hidden></p><div id="recipient-list" class="gift-list"></div></section>';
+  appRoot.innerHTML='<section class="dashboard-panel"><button class="text-button" id="back-home" type="button">← Household</button><p class="eyebrow">Our Gifts</p><h1>Gifts for other people</h1><p class="welcome-copy">Track recipients, birthdays, budgets, and gifts bought for them.</p><form id="recipient-form" class="gift-form"><div class="field-group"><label>Name</label><input name="name" maxlength="80" required></div><div class="field-group"><label>Birthday</label><input name="birthday" type="text" inputmode="numeric" maxlength="5" placeholder="MM/DD"></div><div class="field-group"><label>Budget ($)</label><input name="budget" type="number" min="0" step="0.01"></div><div class="field-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div><div class="gift-form-actions"><button class="primary-button" id="save-recipient" type="submit">Add recipient</button><button class="secondary-button" id="cancel-recipient" type="button" hidden>Cancel edit</button></div></form><p id="recipient-message" class="auth-message" role="status" hidden></p><button class="text-button" id="toggle-archived-recipients" type="button">Show archived recipients</button><div id="recipient-list" class="gift-list"></div></section>';
   document.querySelector("#back-home").addEventListener("click",()=>renderHouseholdHome(user,household,householdId));
   const form=document.querySelector("#recipient-form"),list=document.querySelector("#recipient-list"),msg=document.querySelector("#recipient-message"),save=document.querySelector("#save-recipient"),cancel=document.querySelector("#cancel-recipient");let editId=null;
   function notice(t,k="info"){msg.textContent=t;msg.dataset.kind=k;msg.hidden=false;}
@@ -430,9 +434,9 @@ async function renderGiftRecipients(user, household, householdId) {
   cancel.addEventListener("click",reset);
   async function load(){
     const [rs,gs]=await Promise.all([getDocs(recipientsRef),getDocs(giftsRef)]);
-    const people=rs.docs.map(x=>({id:x.id,...x.data()})).filter(x=>x.active!==false);
+    const people=rs.docs.map(x=>({id:x.id,...x.data()})).filter(x=>(x.active!==false)!==showArchivedRecipients);
     const gifts=gs.docs.map(x=>x.data());
-    if(!people.length){list.innerHTML='<p class="empty-state">No recipients added yet.</p>';return;}
+    if(!people.length){list.innerHTML=showArchivedRecipients?'<p class="empty-state">No archived recipients.</p>':'<p class="empty-state">No recipients added yet.</p>';return;}
     list.innerHTML=people.map(r=>{const rg=gifts.filter(g=>g.recipientId===r.id),spent=rg.reduce((n,g)=>n+(g.paidPriceCents||0),0);return '<article class="child-card"><div class="child-card-main"><h3>'+escapeHtml(r.name)+'</h3><p>'+(r.birthday?'Birthday: '+escapeHtml(formatBirthday(r.birthday)):'Birthday not added')+'</p><p>Budget: '+(r.budgetCents==null?'—':formatMoney(r.budgetCents))+' · Spent: '+formatMoney(spent)+'</p><p>'+rg.length+' gifts</p></div><div class="child-card-actions"><button class="text-button edit-recipient" data-id="'+r.id+'" type="button">Edit</button><button class="text-button archive-recipient" data-id="'+r.id+'" type="button">Archive</button><button class="text-button recipient-gifts" data-id="'+r.id+'" type="button">Gift list</button></div></article>';}).join("");
     list.querySelectorAll(".edit-recipient").forEach(b=>b.addEventListener("click",()=>{const r=people.find(x=>x.id===b.dataset.id);editId=r.id;form.elements.name.value=r.name||"";form.elements.birthday.value=formatBirthdayInput(r.birthday);form.elements.budget.value=r.budgetCents==null?"":(r.budgetCents/100).toFixed(2);form.elements.notes.value=r.notes||"";save.textContent="Save changes";cancel.hidden=false;form.scrollIntoView({behavior:"smooth"});}));
     list.querySelectorAll(".archive-recipient").forEach(b=>b.addEventListener("click",async()=>{const r=people.find(x=>x.id===b.dataset.id);if(!confirm("Archive "+r.name+"? Gift records will be kept."))return;try{await updateDoc(doc(recipientsRef,r.id),{active:false,updatedAt:serverTimestamp()});await load();}catch(e){notice(friendlyError(e),"error");}}));
@@ -1133,6 +1137,7 @@ async function renderChildWishlist(user, household, householdId, child) {
       <button class="text-button" id="back-wishlist" type="button">← Household</button>
       <p class="eyebrow">Wishlists</p><h1>${escapeHtml(child.name)}'s wishlist</h1>
       <p class="welcome-copy">One master list for this child. Gift-giver links will use selections from this list, so an item only exists once.</p>
+      <section class="children-section"><h2>Gift-giver selections</h2><p class="section-copy">Choose which wishlist items each person can see and manage their link here.</p><button class="secondary-button" id="toggle-child-sharing" type="button">Manage gift-giver selections</button><div id="child-sharing-panel" hidden></div></section>
       <section class="children-section">
         <h2>Wishlist categories</h2>
         <div id="wishlist-category-list" class="settings-list"></div>
@@ -1155,6 +1160,56 @@ async function renderChildWishlist(user, household, householdId, child) {
   const message=document.querySelector("#wishlist-message"), save=document.querySelector("#save-wishlist-item"), cancel=document.querySelector("#cancel-wishlist-edit");
   let editingId=null;
   function notice(text,kind="info"){message.textContent=text;message.dataset.kind=kind;message.hidden=false;}
+  const sharingToggle=document.querySelector("#toggle-child-sharing");
+  const sharingPanel=document.querySelector("#child-sharing-panel");
+  sharingToggle.addEventListener("click",async()=>{
+    sharingPanel.hidden=!sharingPanel.hidden;
+    sharingToggle.textContent=sharingPanel.hidden?"Manage gift-giver selections":"Hide gift-giver selections";
+    if(sharingPanel.hidden)return;
+    sharingPanel.innerHTML='<p class="empty-state">Loading gift-givers…</p>';
+    try{
+      const giverSnap=await getDocs(query(collection(db,"households",householdId,"giftGivers"),orderBy("name","asc")));
+      const givers=giverSnap.docs.map(row=>({id:row.id,...row.data()})).filter(g=>g.active!==false);
+      if(!givers.length){sharingPanel.innerHTML='<p class="empty-state">Add a gift-giver first.</p>';return;}
+      sharingPanel.innerHTML='<div class="field-group"><label for="child-sharing-giver">Gift-giver</label><select id="child-sharing-giver">'+givers.map(g=>'<option value="'+escapeHtml(g.id)+'">'+escapeHtml(g.name)+'</option>').join("")+'</select></div><div id="child-sharing-items"></div><div class="gift-form-actions"><button class="primary-button" id="save-child-sharing" type="button">Save selection and link</button></div><p class="auth-message" id="child-sharing-message" role="status" hidden></p>';
+      const giverSelect=sharingPanel.querySelector("#child-sharing-giver"),itemsTarget=sharingPanel.querySelector("#child-sharing-items"),shareMessage=sharingPanel.querySelector("#child-sharing-message");
+      let currentLink=null;
+      async function loadGiverSelection(){
+        const giver=givers.find(g=>g.id===giverSelect.value);if(!giver)return;
+        const linkId=giver.id+"_"+child.id,linkRef=doc(db,"households",householdId,"shareLinks",linkId);
+        currentLink=await getDoc(linkRef);
+        const selected=new Set(currentLink.exists()?currentLink.data().selectedItemIds||[]:[]);
+        const itemSnap=await getDocs(query(itemsRef,orderBy("sortOrder","asc")));
+        const availableItems=itemSnap.docs.map(row=>({id:row.id,...row.data()})).filter(item=>item.childId===child.id&&item.availability!=="unavailable");
+        itemsTarget.innerHTML=availableItems.length?availableItems.map(item=>'<label class="check-row"><input type="checkbox" value="'+escapeHtml(item.id)+'" '+(selected.has(item.id)?"checked":"")+'><span>'+escapeHtml(item.item)+(item.availability==="claimed"?" (Claimed)":item.availability==="purchased"?" (Purchased)":"")+'</span></label>').join(""):'<p class="empty-state">No wishlist items to select yet.</p>';
+        const existingUrl=sharingPanel.querySelector("#child-sharing-url");if(existingUrl)existingUrl.remove();
+      }
+      giverSelect.addEventListener("change",loadGiverSelection);
+      await loadGiverSelection();
+      sharingPanel.querySelector("#save-child-sharing").addEventListener("click",async buttonEvent=>{
+        const button=buttonEvent.currentTarget;button.disabled=true;shareMessage.hidden=true;
+        try{
+          const giver=givers.find(g=>g.id===giverSelect.value),linkId=giver.id+"_"+child.id;
+          const selectedItemIds=[...itemsTarget.querySelectorAll('input[type="checkbox"]:checked')].map(input=>input.value);
+          const linkRef=doc(db,"households",householdId,"shareLinks",linkId);
+          const latest=await getDoc(linkRef);
+          let token=localStorage.getItem("fgm-share-token:"+linkId),tokenHash=latest.exists()?latest.data().tokenHash:null;
+          if(!tokenHash||!token){token=newShareToken();tokenHash=await sha256Hex(token);}
+          const shareRef=doc(db,"publicShares",tokenHash),batch=writeBatch(db);
+          const data={childId:child.id,giftGiverId:giver.id,active:true,selectedItemIds,tokenHash,updatedAt:serverTimestamp(),...(latest.exists()?{}:{createdAt:serverTimestamp()})};
+          batch.set(linkRef,data,{merge:true});
+          batch.set(shareRef,{householdId,childId:child.id,giftGiverId:giver.id,shareLinkId:linkId,selectedItemIds,active:true,updatedAt:serverTimestamp(),...(latest.exists()?{}:{createdAt:serverTimestamp()})},{merge:true});
+          if(latest.exists()&&latest.data().tokenHash&&latest.data().tokenHash!==tokenHash)batch.update(doc(db,"publicShares",latest.data().tokenHash),{active:false,updatedAt:serverTimestamp()});
+          await batch.commit();localStorage.setItem("fgm-share-token:"+linkId,token);
+          let urlBox=sharingPanel.querySelector("#child-sharing-url");if(!urlBox){urlBox=document.createElement("div");urlBox.id="child-sharing-url";urlBox.className="auth-message";sharingPanel.appendChild(urlBox);}
+          urlBox.innerHTML='<strong>Share link</strong><p><input readonly aria-label="Share link URL" value="'+escapeHtml(shareUrl(token))+'"></p><button class="secondary-button" id="copy-child-sharing-link" type="button">Copy link</button>';
+          urlBox.querySelector("#copy-child-sharing-link").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(shareUrl(token));shareMessage.textContent="Link copied.";shareMessage.hidden=false;}catch(error){shareMessage.textContent="Copy failed. Select and copy the link above.";shareMessage.hidden=false;}});
+          shareMessage.textContent="Selection saved.";shareMessage.hidden=false;shareMessage.dataset.kind="success";
+        }catch(error){shareMessage.textContent=friendlyError(error);shareMessage.hidden=false;shareMessage.dataset.kind="error";}
+        finally{button.disabled=false;}
+      });
+    }catch(error){sharingPanel.innerHTML='<p class="auth-message">'+escapeHtml(friendlyError(error))+'</p>';}
+  });
   function refreshCategorySelect(selected){
     form.elements.categoryId.innerHTML=categories.filter(x=>x.active!==false).map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.label)+'</option>').join("");
     if(selected)form.elements.categoryId.value=selected;
